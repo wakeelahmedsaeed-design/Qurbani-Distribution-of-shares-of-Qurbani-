@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toBlob } from 'html-to-image';
 import { 
   Beef, 
   Search, 
@@ -161,6 +162,10 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [pendingActiveBranch, setPendingActiveBranch] = useState<string>('nazim');
+
+  // WhatsApp receipt capture states
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [showCopiedAlert, setShowCopiedAlert] = useState(false);
 
   // Dialog state for notifications and confirmations (solves secure sandboxed iframe prompt blocks)
   const [appDialog, setAppDialog] = useState<{
@@ -634,6 +639,102 @@ export default function App() {
         shares: a.shares.map(s => s.id === shareId ? { ...s, expectedDeliveryTime: time } : s)
       };
     }));
+  };
+
+  const handleCaptureAndShare = async () => {
+    if (!activeSlip) return;
+    setIsGeneratingImage(true);
+    
+    // Tiny delay to let any rendering changes settle
+    setTimeout(async () => {
+      const element = document.getElementById('printable-area');
+      if (!element) {
+        setIsGeneratingImage(false);
+        triggerAlert('سستم کی خرابی کی وجہ سے تصویر حاصل نہ کی جا سکی۔', 'غلطی');
+        return;
+      }
+
+      try {
+        // Render directly using html-to-image toBlob helper which handles sandbox frames and CSS/fonts perfectly
+        const blob = await toBlob(element, {
+          cacheBust: true,
+          pixelRatio: 2.5,
+          style: {
+            transform: 'scale(1)',
+          }
+        });
+
+        if (!blob) {
+          setIsGeneratingImage(false);
+          triggerAlert('تصویر رینڈر کرنے میں ناکامی پیش آئی۔', 'غلطی');
+          return;
+        }
+
+        let cleanNumber = activeSlip.share.phone ? activeSlip.share.phone.replace(/[-\s]/g, '') : '';
+        if (cleanNumber.startsWith('0')) {
+          cleanNumber = '92' + cleanNumber.substring(1);
+        }
+
+        const issuingBranchName = activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر';
+        const msg = `*اجتماعی قربانی سوسائٹی - رسید بکنگ* 🌸\n\n` +
+                    `*رسید نمبر:* S-${activeSlip.share.id}\n` +
+                    `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
+                    `*حصہ مہر:* حصہ ${activeSlip.index}\n` +
+                    `*نام صاحبِ حصہ:* ${activeSlip.share.name || '---'}\n` +
+                    `*سال سیشن:* ${activeYear}\n` +
+                    `*وصول شدہ فنڈ رقم:* ${activeSlip.share.amountPaid.toLocaleString('ur-PK')} روپے\n` +
+                    `*وصولی اسٹیٹس:* ${activeSlip.share.isPaid ? 'مکمل وصول شدہ ✅' : 'باقی فنڈ غیر ادا شدہ ❌'}\n` +
+                    `*جاری کنندہ کاؤنٹر:* ${issuingBranchName}\n` +
+                    `*توقع فراہمی گوشت:* ${activeSlip.share.expectedDeliveryTime || 'عیدِ سعید'}\n\n` +
+                    `------------------------------------\n` +
+                    `*ہدایت:* رسید کی مکمل خوبصورت تصویر آپ کے کلپ بورڈ پر خودکار طریقے سے کاپی کر دی گئی ہے۔ چونکہ واٹس ایپ براہِ راست تصویر نہیں بھیج سکے گا، اس لیے چیٹ ونڈو کھلتے ہی وہاں *Ctrl+V* دبا کر یا دبا کے رکھ کر *Paste* کریں اور تصویر روانہ کر دیں۔ جزاک اللہ خیرا!`;
+
+        try {
+          // Write to system clipboard as image stream
+          const data = [new ClipboardItem({ 'image/png': blob })];
+          await navigator.clipboard.write(data);
+          
+          setIsGeneratingImage(false);
+          setShowCopiedAlert(true);
+
+          // Open WhatsApp chat
+          if (cleanNumber) {
+            setTimeout(() => {
+              window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(msg)}`, '_blank', 'noreferrer');
+            }, 2000);
+          }
+        } catch (clipboardError) {
+          console.warn('Clipboard copy rejected, running download fallback...', clipboardError);
+          
+          // Safe fallback: trigger image file download
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Receipt-S-${activeSlip.share.id}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          setIsGeneratingImage(false);
+          triggerAlert(
+            `رسید کی آفیشل تصویر کامیابی سے ڈاؤن لوڈ ہو گئی ہے! واٹس ایپ کھلتے ہی گیلری اٹیچمنٹ سے ڈاؤن لوڈ کی گئی یہ تصویر منتخب کر کے روانہ فرما دیں۔`,
+            'تصویر ڈاؤن لوڈ ہو گئی!'
+          );
+
+          if (cleanNumber) {
+            setTimeout(() => {
+              window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(msg)}`, '_blank', 'noreferrer');
+            }, 2000);
+          }
+        }
+
+      } catch (err: any) {
+        console.error('Canvas capture failed', err);
+        setIsGeneratingImage(false);
+        triggerAlert('تصویر رینڈر کرنے میں کوئی فنی خرابی پیش آئی ہے: ' + (err.message || String(err)), 'غلطی');
+      }
+    }, 100);
   };
 
   const updateSharePhone = (animalId: number, shareId: string, phone: string) => {
@@ -2381,13 +2482,13 @@ export default function App() {
                 </div>
 
                 {/* Footnotes instruction */}
-                <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl text-center text-[10px] leading-relaxed mt-4 animate-pulse">
+                <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl text-center text-[10px] leading-relaxed mt-4">
                   براہ کرم عید والے دن یہ رسید اپنے ہمراہ لائیں اور وقتِ مقررہ پر تشریف لائیں تاکہ گوشت کا ٹوکرا بآسانی وصول کیا جا سکے۔
                 </div>
 
-                <div className="flex justify-between items-end pt-6 text-[10px] text-slate-400 font-bold">
+                <div className="flex justify-between items-end pt-6 text-[10px] text-slate-400 font-bold font-sans">
                   <div className="text-center min-w-[124px]">
-                    <span className="block text-slate-950 font-black text-xs mb-1">
+                    <span className="block text-black font-black text-sm mb-1" style={{ color: '#000000', fontWeight: '900' }}>
                       {activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر'}
                     </span>
                     <span className="block border-t border-slate-200 w-full text-center mt-2 pt-1 font-bold text-slate-500">دستخط وصول کنندہ</span>
@@ -2413,53 +2514,75 @@ export default function App() {
                         window.location.reload(); // simple page restore after system print UI dismiss
                       }
                     }}
-                    className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 text-white py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95"
+                    className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 text-white py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95 cursor-pointer"
                   >
                     <Printer size={16} /> رسید پرنٹ کریں
                   </button>
 
                   <button 
                     onClick={() => setActiveSlip(null)}
-                    className="bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-sm transition-all active:scale-95"
+                    className="bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-sm transition-all active:scale-95 cursor-pointer"
                   >
                     بند کریں
                   </button>
                 </div>
 
                 {activeSlip.share.phone && (
-                  <a 
-                    href={(() => {
-                      const issuingBranchName = activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر';
-                      const msg = `*اجتماعی قربانی سوسائٹی - رسید بکنگ* 🌸\n\n` +
-                                  `*رسید نمبر:* S-${activeSlip.share.id}\n` +
-                                  `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
-                                  `*حصہ مہر:* حصہ ${activeSlip.index}\n` +
-                                  `*نام صاحبِ حصہ:* ${activeSlip.share.name || '---'}\n` +
-                                  `*سال سیشن:* ${activeYear}\n` +
-                                  `*وصول شدہ فنڈ رقم:* ${activeSlip.share.amountPaid.toLocaleString('ur-PK')} روپے\n` +
-                                  `*وصولی اسٹیٹس:* ${activeSlip.share.isPaid ? 'مکمل وصول شدہ ✅' : 'باقی فنڈ غیر ادا شدہ ❌'}\n` +
-                                  `*جاری کنندہ کاؤنٹر:* ${issuingBranchName}\n` +
-                                  `*توقع فراہمی گوشت:* ${activeSlip.share.expectedDeliveryTime || 'عیدِ سعید'}\n\n` +
-                                  `------------------------------------\n` +
-                                  `*هدایت:* براہِ کرم عید کے روز یہ رسید یا واٹس ایپ میسج دکھا کر مقررہ وقت پر اپنا گوشت کا ٹوکرا وصول فرما لیں۔ جزاک اللہ خیرا!`;
-                      
-                      let cleanNumber = activeSlip.share.phone.replace(/[-\s]/g, '');
-                      if (cleanNumber.startsWith('0')) {
-                        cleanNumber = '92' + cleanNumber.substring(1);
-                      }
-                      return `https://wa.me/${cleanNumber}?text=${encodeURIComponent(msg)}`;
-                    })()}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95 text-center mt-1"
+                  <button 
+                    type="button"
+                    disabled={isGeneratingImage}
+                    onClick={handleCaptureAndShare}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white font-black py-3 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95 text-center mt-1 cursor-pointer"
                   >
-                    <svg className="w-4 h-4 text-white fill-current shrink-0" viewBox="0 0 24 24">
-                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003  5.324 5.328 0 11.91 0c3.19.001 6.189 1.242 8.444 3.498 2.256 2.256 3.497 5.255 3.497  8.447 0 6.586-5.322 11.91-11.905 11.91-2.002-.001-3.973-.504-5.714-1.46L0 24zm6.59-4.846c1.6.95 3.488 1.451  5.312 1.452 5.385 0 9.766-4.38 9.771-9.768.002-2.61-1.015-5.064-2.864-6.914C17.017 2.073  14.565 1.056 11.956 1.056c-5.388 0-9.773 4.382-9.778  9.771-.001 1.93.498 3.816 1.446 5.485L2.642 21.31l5.005-1.314z"/>
-                    </svg>
-                    <span>واٹس ایپ رسید روانہ کریں (ون کلک)</span>
-                  </a>
+                    {isGeneratingImage ? (
+                      <>
+                        <RotateCw size={16} className="animate-spin text-white" />
+                        <span>رسید کی تصویر تیار کی جا رہی ہے...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 text-white fill-current shrink-0" viewBox="0 0 24 24">
+                          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003  5.324 5.328 0 11.91 0c3.19.001 6.189 1.242 8.444 3.498 2.256 2.256 3.497 5.255 3.497  8.447 0 6.586-5.322 11.91-11.905 11.91-2.002-.001-3.973-.504-5.714-1.46L0 24zm6.59-4.846c1.6.95 3.488 1.451  5.312 1.452 5.385 0 9.766-4.38 9.771-9.768.002-2.61-1.015-5.064-2.864-6.914C17.017 2.073  14.565 1.056 11.956 1.056c-5.388 0-9.773 4.382-9.778  9.771-.001 1.93.498 3.816 1.446 5.485L2.642 21.31l5.005-1.314z"/>
+                        </svg>
+                        <span>واٹس ایپ رسید بطور تصویر بھیجیں (ون کلک کاپی)</span>
+                      </>
+                    )}
+                  </button>
                 )}
               </div>
+
+              {/* Clipboard copy beautiful notification overlay */}
+              <AnimatePresence>
+                {showCopiedAlert && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="absolute inset-0 bg-white/98 backdrop-blur-sm z-30 rounded-2xl flex flex-col items-center justify-center p-6 text-center space-y-4"
+                  >
+                    <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center shadow-inner">
+                      <CheckCircle2 size={36} className="text-emerald-500 animate-bounce" />
+                    </div>
+                    <h4 className="text-lg font-black text-slate-900" style={{ fontFamily: 'sans-serif' }}>رسید کی تصویر کاپی ہو گئی! ✅</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed max-w-xs font-bold Urdu">
+                      رسید کی آفیشل تصوریری رسید کامیابی سے آپ کے فون/کمپیوٹر کے کلپ بورڈ پر محفوظ کر دی گئی ہے۔
+                    </p>
+                    <div className="bg-amber-50 text-amber-900 border border-amber-200 rounded-xl p-3 text-[11px] leading-relaxed font-bold max-w-xs text-center">
+                       واٹس ایپ چیٹ کھلتے ہی وہاں صرف <span className="font-mono bg-amber-200 px-1 py-0.5 rounded text-xs font-black">Ctrl + V</span> یا <span className="bg-amber-200 px-1 py-0.5 rounded text-xs font-black">Paste</span> کا بٹن دبائیں تاکہ رسید تصویر کی شکل میں روانہ ہو جائے۔
+                    </div>
+                    <div className="pt-2 flex gap-2 w-full">
+                      <button
+                        onClick={() => {
+                          setShowCopiedAlert(false);
+                        }}
+                        className="flex-1 bg-slate-900 text-white font-extrabold py-3 rounded-xl text-xs transition-all hover:bg-slate-800 cursor-pointer"
+                      >
+                        بند کریں
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </div>
         )}
