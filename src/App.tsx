@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Beef, 
@@ -25,7 +25,11 @@ import {
   RotateCw,
   CreditCard,
   Briefcase,
-  PiggyBank
+  PiggyBank,
+  Lock,
+  LogIn,
+  LogOut,
+  Key
 } from 'lucide-react';
 
 interface Share {
@@ -36,6 +40,8 @@ interface Share {
   isPaid: boolean;
   amountPaid: number;
   expectedDeliveryTime: string;
+  paidByBranchId?: string;
+  paidByBranchLabel?: string;
 }
 
 interface Animal {
@@ -72,19 +78,30 @@ interface Branch {
   textColor: string;
   accent: string;
   isCustom?: boolean;
+  password?: string;
 }
 
 const DEFAULT_BRANCHES: Branch[] = [
-  { id: 'nazim', label: 'ناظم مدرسہ', color: 'bg-slate-700', textColor: 'text-slate-705 text-slate-700', accent: 'slate' },
-  { id: 'korangi', label: 'کورنگی کاؤنٹر', color: 'bg-emerald-600', textColor: 'text-emerald-700', accent: 'emerald' },
-  { id: 'landhi', label: 'لانڈھی کاؤنٹر', color: 'bg-indigo-600', textColor: 'text-indigo-700', accent: 'indigo' },
-  { id: 'qayyumabad', label: 'قیوم آباد کاؤنٹر', color: 'bg-sky-600', textColor: 'text-sky-700', accent: 'sky' }
+  { id: 'nazim', label: 'ناظم مدرسہ', color: 'bg-slate-700', textColor: 'text-slate-705 text-slate-700', accent: 'slate', password: '9211' },
+  { id: 'korangi', label: 'کورنگی کاؤنٹر', color: 'bg-emerald-600', textColor: 'text-emerald-700', accent: 'emerald', password: '123' },
+  { id: 'landhi', label: 'لانڈھی کاؤنٹر', color: 'bg-indigo-600', textColor: 'text-indigo-700', accent: 'indigo', password: '123' },
+  { id: 'qayyumabad', label: 'قیوم آباد کاؤنٹر', color: 'bg-sky-600', textColor: 'text-sky-700', accent: 'sky', password: '123' }
 ];
 
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits'>('dashboard');
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // default global share amount managed by Nazim
+  const [globalShareAmount, setGlobalShareAmount] = useState<number>(() => {
+    const saved = localStorage.getItem('qurbani_global_share_amount_v5');
+    if (saved) {
+      const parsed = parseInt(saved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 45000; // standard default
+  });
   
   // dynamic branches list
   const [branches, setBranches] = useState<Branch[]>(() => {
@@ -93,7 +110,11 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          // ensure passwords exist mapping defaults if legacy
+          return parsed.map((b: any) => ({
+            ...b,
+            password: b.password || (b.id === 'nazim' ? '9211' : '123')
+          }));
         }
       } catch (e) {
         console.error(e);
@@ -108,6 +129,14 @@ export default function App() {
     if (val === 'headoffice') return 'nazim'; // migrate old headoffice role to nazim
     return val || 'nazim'; // default to nazim
   });
+
+  // Authentication Pin state
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('qurbani_is_authenticated_v5') === 'true';
+  });
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [pendingActiveBranch, setPendingActiveBranch] = useState<string>('nazim');
 
   // Recent Global Activities logs for multi-branch monitoring
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
@@ -153,6 +182,7 @@ export default function App() {
 
   // loading animals with migration fallbacks
   const [animals, setAnimals] = useState<Animal[]>(() => {
+    const initialGlobalAmount = parseInt(localStorage.getItem('qurbani_global_share_amount_v5') || '45000') || 45000;
     const saved = localStorage.getItem('qurbani_data_v4');
     if (saved) {
       try {
@@ -166,8 +196,10 @@ export default function App() {
               isDistributed: !!share.isDistributed,
               distributionTime: share.distributionTime || undefined,
               isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
-              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : DEFAULT_SHARE_AMOUNT,
+              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : initialGlobalAmount,
               expectedDeliveryTime: share.expectedDeliveryTime || '01:00 PM',
+              paidByBranchId: share.paidByBranchId || undefined,
+              paidByBranchLabel: share.paidByBranchLabel || undefined
             })) : []
           })).sort((a: any, b: any) => a.id - b.id);
         }
@@ -185,7 +217,7 @@ export default function App() {
         name: `حصہ دار ${j + 1}`,
         isDistributed: false,
         isPaid: false,
-        amountPaid: DEFAULT_SHARE_AMOUNT,
+        amountPaid: initialGlobalAmount,
         expectedDeliveryTime: '01:00 PM'
       }))
     }));
@@ -347,7 +379,7 @@ export default function App() {
         name: `حصہ دار ${j + 1}`,
         isDistributed: false,
         isPaid: false,
-        amountPaid: DEFAULT_SHARE_AMOUNT,
+        amountPaid: globalShareAmount,
         expectedDeliveryTime: '01:00 PM'
       }))
     };
@@ -373,6 +405,13 @@ export default function App() {
   };
 
   const updateShareName = (animalId: number, shareId: string, name: string) => {
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const sh = targetAnimal.shares.find(s => s.id === shareId);
+      if (sh && sh.isPaid && activeBranch !== 'nazim' && sh.paidByBranchId && sh.paidByBranchId !== activeBranch) {
+        return; // secure lock
+      }
+    }
     setAnimals(prev => prev.map(a => {
       if (a.id !== animalId) return a;
       return {
@@ -383,6 +422,13 @@ export default function App() {
   };
 
   const updateShareAmount = (animalId: number, shareId: string, amount: number) => {
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const sh = targetAnimal.shares.find(s => s.id === shareId);
+      if (sh && sh.isPaid && activeBranch !== 'nazim' && sh.paidByBranchId && sh.paidByBranchId !== activeBranch) {
+        return; // secure lock
+      }
+    }
     setAnimals(prev => prev.map(a => {
       if (a.id !== animalId) return a;
       return {
@@ -393,6 +439,13 @@ export default function App() {
   };
 
   const updateShareDeliveryTime = (animalId: number, shareId: string, time: string) => {
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const sh = targetAnimal.shares.find(s => s.id === shareId);
+      if (sh && sh.isPaid && activeBranch !== 'nazim' && sh.paidByBranchId && sh.paidByBranchId !== activeBranch) {
+        return; // secure lock
+      }
+    }
     setAnimals(prev => prev.map(a => {
       if (a.id !== animalId) return a;
       return {
@@ -407,6 +460,24 @@ export default function App() {
     let shareName = '';
     let shareAmount = 0;
     let animLabel = '';
+    let paidByOther = false;
+    let otherBranchName = '';
+
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const targetShare = targetAnimal.shares.find(s => s.id === shareId);
+      if (targetShare && targetShare.isPaid) {
+        if (activeBranch !== 'nazim' && targetShare.paidByBranchId && targetShare.paidByBranchId !== activeBranch) {
+          paidByOther = true;
+          otherBranchName = targetShare.paidByBranchLabel || 'متبادل کاؤنٹر';
+        }
+      }
+    }
+
+    if (paidByOther) {
+      alert(`معذرت! یہ حصہ پہلے ہی "${otherBranchName}" کی طرف سے بک ہو چکا ہے اور لاک ہے۔ کوئی اور کاؤنٹر اسے ترمیم یا تبدیل نہیں کر سکتا۔`);
+      return;
+    }
 
     setAnimals(prev => prev.map(a => {
       if (a.id !== animalId) return a;
@@ -418,7 +489,13 @@ export default function App() {
           oldPaid = s.isPaid;
           shareName = s.name;
           shareAmount = s.amountPaid;
-          return { ...s, isPaid: !s.isPaid };
+          const isNowPaid = !s.isPaid;
+          return { 
+            ...s, 
+            isPaid: isNowPaid,
+            paidByBranchId: isNowPaid ? activeBranch : undefined,
+            paidByBranchLabel: isNowPaid ? (branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر') : undefined
+          };
         })
       };
     }));
@@ -570,6 +647,132 @@ export default function App() {
 
   const selectedAnimal = animals.find(a => a.id === selectedAnimalId);
 
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const branchToAuth = branches.find(b => b.id === pendingActiveBranch);
+    if (!branchToAuth) {
+      setLoginError('منتخب کردہ کاؤنٹر ریکارڈ میں نہیں ملا۔');
+      return;
+    }
+    const entered = loginPassword.trim();
+    const correct = (branchToAuth.password || (branchToAuth.id === 'nazim' ? '9211' : '123')).trim();
+
+    if (entered === correct) {
+      setIsAuthenticated(true);
+      setActiveBranch(pendingActiveBranch);
+      localStorage.setItem('qurbani_is_authenticated_v5', 'true');
+      localStorage.setItem('qurbani_active_branch_v4', pendingActiveBranch);
+      setLoginPassword('');
+      setLoginError('');
+    } else {
+      setLoginError('درج کردہ پاسورڈ/PIN درست نہیں ہے۔ براہِ مہربانی ناظم سے رجوع کریں۔');
+    }
+  };
+
+  useEffect(() => {
+    localStorage.setItem('qurbani_is_authenticated_v5', isAuthenticated ? 'true' : 'false');
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 urdu-text" dir="rtl">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-emerald-800/20"
+        >
+          {/* Top visual banner */}
+          <div className="bg-emerald-800 p-8 text-center text-white relative">
+            <div className="absolute top-3 right-3 bg-emerald-700/50 text-[10px] uppercase font-bold px-2.5 py-1 rounded-full text-emerald-300">
+              قربانی فنڈ مینیجر v5
+            </div>
+            <div className="w-16 h-16 bg-white/10 rounded-2xl mx-auto flex items-center justify-center mb-4 backdrop-blur-sm">
+              <Lock className="text-white" size={32} />
+            </div>
+            <h2 className="text-2xl font-black tracking-tight font-sans">کاؤنٹر لاگ ان سروس</h2>
+            <p className="text-xs text-emerald-100/80 mt-1 font-bold">اجتماعی قربانی بکنگ اور کیش وصولی کے لیے منتخب کاؤنٹر سے لاگ ان کریں</p>
+          </div>
+
+          <form onSubmit={handleLoginSubmit} className="p-8 space-y-6">
+            {loginError && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-red-50 text-red-700 text-xs font-bold p-3.5 rounded-xl border border-red-100 flex items-center gap-2"
+              >
+                <Info size={16} className="shrink-0 animate-bounce" />
+                <span className="font-bold">{loginError}</span>
+              </motion.div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block text-right">آپ کا کاؤنٹر / شناخت منتخب کریں:</label>
+              <div className="relative">
+                <select
+                  value={pendingActiveBranch}
+                  onChange={(e) => {
+                    setPendingActiveBranch(e.target.value);
+                    setLoginError('');
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer appearance-none text-right pr-4"
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.label} {b.id === 'nazim' ? ' (اعلیٰ ایڈمن)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <Users className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block text-right">کاؤنٹر پاسورڈ / لاگ ان PIN درج کریں:</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => {
+                    setLoginPassword(e.target.value);
+                    setLoginError('');
+                  }}
+                  required
+                  placeholder="لاگ ان PIN درج کریں"
+                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 tracking-widest placeholder:tracking-normal font-mono"
+                />
+                <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold py-3.5 rounded-2xl text-sm transition-all shadow-lg flex items-center justify-center gap-2 shadow-emerald-600/20 shadow-md"
+            >
+              <LogIn size={18} /> اکاؤنٹ لاگ ان کریں
+            </button>
+
+            {/* Standard developer utility guidelines to avoid forgetting passwords */}
+            <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl space-y-2">
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">نئے یوزرز کے لیے آزمائشی لاگ ان PINز:</h4>
+              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 font-bold">
+                <div className="p-1.5 bg-white rounded border border-slate-200/50">
+                  <span className="text-slate-400">ناظم مدرسہ:</span> <code className="text-emerald-700 font-mono">9211</code>
+                </div>
+                <div className="p-1.5 bg-white rounded border border-slate-200/50">
+                  <span className="text-slate-400">دیگر کاؤنٹرز:</span> <code className="text-emerald-700 font-mono">123</code>
+                </div>
+              </div>
+              <p className="text-[9px] text-slate-400 font-medium leading-relaxed">
+                * ناظم مدرسہ لاگ ان کرکے "گائے کا اندراج" مینو کے تحت دیگر کاؤنٹرز کے نام اور ان کے پاسورڈز تبدیل یا نئے شامل بھی کر سکتا ہے۔
+              </p>
+            </div>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 urdu-text" dir="rtl">
       {/* Sidebar Navigation */}
@@ -651,26 +854,29 @@ export default function App() {
             </div>
           </div>
 
-          {/* Active Branch and Sync Selector */}
+          {/* Active Branch and Log out */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 font-bold px-2">کاؤنٹر منتخب کریں:</span>
-              <select
-                value={activeBranch}
-                onChange={(e) => {
-                  setActiveBranch(e.target.value);
-                  const selectedName = branches.find(b => b.id === e.target.value)?.label || 'کاؤنٹر';
-                  alert(`کامیابی سے "${selectedName}" پر سوئچ کر دیا گیا۔ اب آپ اس کاؤنٹر سے مندرج کریں گے!`);
-                }}
-                className="text-xs font-bold bg-white text-slate-800 border-none rounded-lg px-2 py-1 outline-none cursor-pointer focus:ring-1 focus:ring-emerald-500"
-              >
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 font-bold block text-left">لاگ ان سیشن بابت:</span>
+              <span className={`text-xs font-black px-3 py-1.5 rounded-xl text-white flex items-center gap-1.5 shadow-sm ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-700'}`}>
+                {branches.find(b => b.id === activeBranch)?.label}
+              </span>
             </div>
+
+            <button
+              onClick={() => {
+                if (window.confirm('کیا آپ واقعی اپنے لاگ ان سیشن سے لاگ آؤٹ ہو کر دوسرا اکاؤنٹ منتخب کرنا چاہتے ہیں؟')) {
+                  setIsAuthenticated(false);
+                  localStorage.setItem('qurbani_is_authenticated_v5', 'false');
+                  setLoginPassword('');
+                  setLoginError('');
+                }
+              }}
+              className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-3.5 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+              title="سیشن سے لاگ آؤٹ کر کے دوسرے کاؤنٹر میں منتخب لاگ ان کریں"
+            >
+              <LogOut size={14} /> سیشن لاگ آؤٹ / تبدیل کریں
+            </button>
 
             <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-xl px-3 py-1.5">
               <RotateCw className="text-emerald-500 animate-spin" size={14} />
@@ -1119,104 +1325,129 @@ export default function App() {
                   </div>
 
                   <div className="divide-y divide-slate-100">
-                    {selectedAnimal.shares.map((s, idx) => (
-                      <div key={s.id} className="p-4 lg:p-6 flex flex-col space-y-4 hover:bg-slate-50/50 transition-colors">
-                        <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
-                          
-                          {/* Left column: ID & core details, inputs */}
-                          <div className="flex items-start gap-3 flex-1">
-                            <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400 shrink-0 mt-2">{idx + 1}</span>
-                            <div className="flex-1 space-y-3">
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <div className="col-span-1">
-                                  <label className="text-[10px] text-slate-400 font-bold block mb-0.5">حصہ دار کا نام</label>
-                                  <input 
-                                    type="text" 
-                                    value={s.name}
-                                    onChange={(e) => updateShareName(selectedAnimal.id, s.id, e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
-                                    placeholder="نام درج کریں"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[10px] text-slate-400 font-bold block mb-0.5">رقم (روپے)</label>
-                                  <input 
-                                    type="number" 
-                                    value={s.amountPaid}
-                                    onChange={(e) => updateShareAmount(selectedAnimal.id, s.id, Number(e.target.value))}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                                    placeholder="رقم درج کریں"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[10px] text-slate-400 font-bold block mb-0.5">توقعِ فراہمیِ گوشت کا وقت</label>
-                                  <div className="relative">
+                    {selectedAnimal.shares.map((s, idx) => {
+                      const isShareLocked = s.isPaid && activeBranch !== 'nazim' && s.paidByBranchId && s.paidByBranchId !== activeBranch;
+                      return (
+                        <div key={s.id} className="p-4 lg:p-6 flex flex-col space-y-4 hover:bg-slate-50/50 transition-colors">
+                          <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
+                            
+                            {/* Left column: ID & core details, inputs */}
+                            <div className="flex items-start gap-3 flex-1">
+                              <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400 shrink-0 mt-2">{idx + 1}</span>
+                              <div className="flex-1 space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div className="col-span-1">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">حصہ دار کا نام</label>
                                     <input 
                                       type="text" 
-                                      value={s.expectedDeliveryTime}
-                                      onChange={(e) => updateShareDeliveryTime(selectedAnimal.id, s.id, e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 pr-8 rounded-xl font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
-                                      placeholder="مثلاً 12:30 PM یا عید کا پہلا دن"
+                                      value={s.name}
+                                      disabled={isShareLocked}
+                                      onChange={(e) => updateShareName(selectedAnimal.id, s.id, e.target.value)}
+                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-sm disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      placeholder="نام درج کریں"
                                     />
-                                    <Clock className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">رقم (روپے)</label>
+                                    <input 
+                                      type="number" 
+                                      value={s.amountPaid}
+                                      disabled={isShareLocked}
+                                      onChange={(e) => updateShareAmount(selectedAnimal.id, s.id, Number(e.target.value))}
+                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-sm focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      placeholder="رقم درج کریں"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">توقعِ فراہمیِ گوشت کا وقت</label>
+                                    <div className="relative">
+                                      <input 
+                                        type="text" 
+                                        value={s.expectedDeliveryTime}
+                                        disabled={isShareLocked}
+                                        onChange={(e) => updateShareDeliveryTime(selectedAnimal.id, s.id, e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 p-2.5 pr-8 rounded-xl font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                        placeholder="مثلاً 12:30 PM یا عید کا پہلا دن"
+                                      />
+                                      <Clock className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="flex items-center gap-4 flex-wrap">
-                                <span className="text-[10px] text-slate-400 font-bold">شناخت: {s.id}</span>
-                                {s.isDistributed && s.distributionTime && (
-                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
-                                    <CheckCircle2 size={12} /> تقسیم شدہ بروقت: {s.distributionTime}
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <span className="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded leading-none">ID: {s.id}</span>
+                                  
+                                  {s.isPaid && s.paidByBranchLabel && (
+                                    <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100 font-bold flex items-center gap-1 leading-none">
+                                      <Lock size={10} className="text-blue-500 shrink-0" /> کاؤنٹر مہر: {s.paidByBranchLabel}
+                                    </span>
+                                  )}
+
+                                  {s.isDistributed && s.distributionTime && (
+                                    <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100 font-bold flex items-center gap-1 leading-none">
+                                      <CheckCircle2 size={10} className="text-emerald-500 shrink-0" /> گوشت ٹوکرا تقسیم شدہ: {s.distributionTime}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {/* Right column: Action buttons for payments, receipts, distribution */}
-                          <div className="flex flex-row md:flex-col items-stretch gap-2 shrink-0 md:min-w-[200px] border-t md:border-t-0 border-slate-100 pt-3 md:pt-0">
-                            
-                            {/* Toggle Payment */}
-                            <button
-                              onClick={() => togglePayment(selectedAnimal.id, s.id)}
-                              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all flex-1 md:flex-initial ${
-                                s.isPaid 
-                                  ? 'bg-blue-50 border-blue-200 text-blue-700' 
-                                  : 'bg-white border-slate-200 text-slate-400 hover:border-blue-200'
-                              }`}
-                            >
-                              {s.isPaid ? <CheckCircle2 size={16} /> : <Circle size={16} />}
-                              {s.isPaid ? `رقم موصول: ${s.amountPaid.toLocaleString('ur-PK')}` : 'ادائیگی وصول کریں'}
-                            </button>
+                            {/* Right column: Action buttons for payments, receipts, distribution */}
+                            <div className="flex flex-row md:flex-col items-stretch gap-2 shrink-0 md:min-w-[200px] border-t md:border-t-0 border-slate-100 pt-3 md:pt-0">
+                              
+                              {/* Toggle Payment */}
+                              <button
+                                onClick={() => togglePayment(selectedAnimal.id, s.id)}
+                                disabled={isShareLocked}
+                                className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all flex-1 md:flex-initial shadow-sm ${
+                                  isShareLocked
+                                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                    : s.isPaid 
+                                      ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' 
+                                      : 'bg-white border-slate-200 text-slate-500 hover:border-blue-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                {isShareLocked ? (
+                                  <>
+                                    <Lock size={14} className="text-slate-400 shrink-0 animate-pulse" />
+                                    <span>دیگر کاؤنٹر سے مربوط</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    {s.isPaid ? <CheckCircle2 size={14} className="text-blue-600 shrink-0" /> : <Circle size={14} className="text-slate-300 shrink-0" />}
+                                    {s.isPaid ? `رقم موصول: ${s.amountPaid.toLocaleString('ur-PK')}` : 'ادائیگی وصول کریں'}
+                                  </>
+                                )}
+                              </button>
 
-                            {/* View printable Receipt slip */}
-                            <button
-                              onClick={() => setActiveSlip({ animal: selectedAnimal, share: s, index: idx + 1 })}
-                              className="bg-slate-100 border border-slate-200 text-slate-800 px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-slate-200 transition-all active:scale-95 flex-1 md:flex-initial"
-                            >
-                              <Receipt size={16} className="text-slate-500" />
-                              رسید جاری کریں 
-                            </button>
+                              {/* View printable Receipt slip */}
+                              <button
+                                onClick={() => setActiveSlip({ animal: selectedAnimal, share: s, index: idx + 1 })}
+                                className="bg-slate-100 border border-slate-200 text-slate-800 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-slate-200 transition-all active:scale-95 flex-1 md:flex-initial shadow-sm"
+                              >
+                                <Receipt size={14} className="text-slate-500" />
+                                رسید جاری کریں 
+                              </button>
 
-                            {/* Toggle distributed meat status */}
-                            <button 
-                              onClick={() => toggleDistribution(selectedAnimal.id, s.id)}
-                              className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border-2 transition-all flex-1 md:flex-initial ${
-                                s.isDistributed 
-                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' 
-                                  : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-200'
-                              }`}
-                            >
-                              {s.isDistributed ? 'گوشت مل گیا (سبز)' : 'گوشت ٹوکرا دیا (باقی)'}
-                            </button>
+                              {/* Toggle distributed meat status */}
+                              <button 
+                                onClick={() => toggleDistribution(selectedAnimal.id, s.id)}
+                                className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border-2 transition-all flex-1 md:flex-initial shadow-sm ${
+                                  s.isDistributed 
+                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-md hover:bg-emerald-700' 
+                                    : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-250 hover:bg-slate-50'
+                                }`}
+                              >
+                                {s.isDistributed ? 'گوشت مل گیا (سبز)' : 'گوشت ٹوکرا دیا (باقی)'}
+                              </button>
 
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1251,6 +1482,61 @@ export default function App() {
                   >
                     <Plus size={20} /> اگلی گائے شامل کریں +
                   </button>
+                </div>
+
+                {/* Global default Share Amount card */}
+                <div className="bg-blue-50 border border-blue-200 p-6 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-2 text-blue-900">
+                    <Coins className="text-blue-700" size={22} />
+                    <h4 className="font-extrabold text-sm font-sans">مرکزی طے شدہ بنیادی حصہ رقم (فیس فی حصہ):</h4>
+                  </div>
+                  <p className="text-xs text-blue-700/80 leading-relaxed font-bold">
+                    یہاں سے ناظمِ مدرسہ تمام کاؤنٹربکنگ مینوئل فیس کے تفاوت سے بچنے کے لیے ایک دفعہ کُل حصہ فیس متعین کر سکتا ہے۔ نئے شامل ہونے والے جانوروں کے تمام حصوں کی قیمت خودکار طور پر یہی رقم لاگو ہوگی۔
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1 sm:col-span-1">
+                      <label className="text-xs text-blue-900/70 font-bold block">متعین رقم برائے حصہ (روپے):</label>
+                      <input 
+                        type="number"
+                        value={globalShareAmount}
+                        disabled={activeBranch !== 'nazim'}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val) && val >= 0) {
+                            setGlobalShareAmount(val);
+                          }
+                        }}
+                        className="w-full bg-white border border-blue-200/50 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-sm focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        placeholder="مثال: 24500"
+                      />
+                    </div>
+                    <div className="flex items-end sm:col-span-2 gap-2">
+                      {activeBranch === 'nazim' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Retroactively apply to ALL unpaid shares
+                            if (window.confirm(`کیا آپ واقعی تمام موجودہ گایوں کے "غیر ادا شدہ" (unpaid) حصوں کی رقم تبدیل کر کے ${globalShareAmount.toLocaleString('ur-PK')} روپے کرنا چاہتے ہیں؟`)) {
+                              setAnimals(prev => prev.map(a => ({
+                                ...a,
+                                shares: a.shares.map(s => s.isPaid ? s : { ...s, amountPaid: globalShareAmount })
+                              })));
+                              alert('کامیابی! تمام غیر ادا شدہ حصوں کی رقم نئی رقم کے مطابق تبدیل کر دی گئی ہے۔');
+                              logActivity('add_animal', `تمام غیر ادا شدہ حصوں کی رقم یکمشت تبدیل کر کے ${globalShareAmount.toLocaleString('ur-PK')} روپے مقرر کی گئی`);
+                            }
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-md text-center"
+                        >
+                          تمام غیر ادا شدہ حصوں کی رقم یکمشت اپ ڈیٹ کریں ✨
+                        </button>
+                      ) : (
+                        <div className="text-xs text-amber-700 font-bold p-3 bg-amber-50 rounded-xl border border-amber-200/40 w-full text-center">
+                          ⚠️ ترمیم اور یکمشت اپ ڈیٹ کی صلاحیت صرف ناظم مدرسہ اکاؤنٹ کے پاس دستیاب ہے۔
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Custom Animal ID restore utility card */}
@@ -1362,62 +1648,78 @@ export default function App() {
                   </div>
 
                   {/* Form to add a new counter */}
-                  <form 
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const form = e.currentTarget;
-                      const formData = new FormData(form);
-                      const label = formData.get('label')?.toString().trim();
-                      if (!label) return;
+                  {activeBranch === 'nazim' ? (
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = e.currentTarget;
+                        const formData = new FormData(form);
+                        const label = formData.get('label')?.toString().trim();
+                        const password = formData.get('password')?.toString().trim() || '123';
+                        if (!label) return;
 
-                      // Check duplicate
-                      if (branches.some(b => b.label === label)) {
-                        alert('یہ کاؤنٹر پہلے سے ہی موجود ہے!');
-                        return;
-                      }
+                        // Check duplicate
+                        if (branches.some(b => b.label === label)) {
+                          alert('یہ کاؤنٹر پہلے سے ہی موجود ہے!');
+                          return;
+                        }
 
-                      const randomColors = [
-                        { color: 'bg-emerald-600', textColor: 'text-emerald-700', accent: 'emerald' },
-                        { color: 'bg-indigo-600', textColor: 'text-indigo-700', accent: 'indigo' },
-                        { color: 'bg-sky-600', textColor: 'text-sky-700', accent: 'sky' },
-                        { color: 'bg-amber-600', textColor: 'text-amber-700', accent: 'amber' },
-                        { color: 'bg-rose-600', textColor: 'text-rose-700', accent: 'rose' },
-                        { color: 'bg-teal-600', textColor: 'text-teal-700', accent: 'teal' }
-                      ];
-                      const randomStyle = randomColors[Math.floor(Math.random() * randomColors.length)];
+                        const randomColors = [
+                          { color: 'bg-emerald-600', textColor: 'text-emerald-700', accent: 'emerald' },
+                          { color: 'bg-indigo-600', textColor: 'text-indigo-700', accent: 'indigo' },
+                          { color: 'bg-sky-600', textColor: 'text-sky-700', accent: 'sky' },
+                          { color: 'bg-amber-600', textColor: 'text-amber-700', accent: 'amber' },
+                          { color: 'bg-rose-600', textColor: 'text-rose-700', accent: 'rose' },
+                          { color: 'bg-teal-600', textColor: 'text-teal-700', accent: 'teal' }
+                        ];
+                        const randomStyle = randomColors[Math.floor(Math.random() * randomColors.length)];
 
-                      const newBranchId = 'branch_' + Math.random().toString(36).substr(2, 9);
-                      const newBranch: Branch = {
-                        id: newBranchId,
-                        label,
-                        color: randomStyle.color,
-                        textColor: randomStyle.textColor,
-                        accent: randomStyle.accent,
-                        isCustom: true
-                      };
+                        const newBranchId = 'branch_' + Math.random().toString(36).substr(2, 9);
+                        const newBranch: Branch = {
+                          id: newBranchId,
+                          label,
+                          password,
+                          color: randomStyle.color,
+                          textColor: randomStyle.textColor,
+                          accent: randomStyle.accent,
+                          isCustom: true
+                        };
 
-                      setBranches(prev => [...prev, newBranch]);
-                      form.reset();
-                      alert(`موصول کنندہ کاؤنٹر "${label}" کامیابی سے شامل کر دیا گیا۔ اب یہ باقاعدہ اوپر مینیو میں منتخب کیا جا سکے گا!`);
-                    }}
-                    className="grid grid-cols-1 sm:grid-cols-3 gap-4"
-                  >
-                    <div className="sm:col-span-2">
-                      <input 
-                        type="text"
-                        name="label"
-                        required
-                        placeholder="نئے کاؤنٹر کا نام درج کریں (مثلاً: قاری جاوید صاحب یا صدر برانچ)"
-                        className="w-full bg-white border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5"
+                        setBranches(prev => [...prev, newBranch]);
+                        form.reset();
+                        alert(`موصول کنندہ کاؤنٹر "${label}" کامیابی سے شامل کر دیا گیا۔ اب یہ باقاعدہ اکاؤنٹ لاگ ان کے طور پر منتخب کیا جا سکے گا!`);
+                      }}
+                      className="grid grid-cols-1 sm:grid-cols-4 gap-4"
                     >
-                      <Plus size={16} /> نیا کاؤنٹر شامل کریں
-                    </button>
-                  </form>
+                      <div className="sm:col-span-2">
+                        <input 
+                          type="text"
+                          name="label"
+                          required
+                          placeholder="نئے کاؤنٹر کا نام درج کریں (مثلاً: قاری جاوید صاحب)"
+                          className="w-full bg-white border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <input 
+                          type="text"
+                          name="password"
+                          placeholder="پاسورڈ درج کریں (ڈیفالٹ: 123)"
+                          className="w-full bg-white border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none text-center"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5"
+                      >
+                        <Plus size={16} /> کاؤنٹر شامل کریں
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="p-4 bg-amber-50 rounded-2xl text-amber-800 text-xs font-bold border border-amber-200/50">
+                      ⚠️ توجہ: کاؤنٹرز کی معلومات شامل کرنا یا ان کے پاسورڈز تبدیل کرنا صرف "ناظم مدرسہ" کے انتظامی اکاؤنٹ سے ہی ممکن ہے۔
+                    </div>
+                  )}
 
                   {/* Table to edit/list/delete counters */}
                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -1426,6 +1728,7 @@ export default function App() {
                         <tr>
                           <th className="p-3">کاؤنٹر کی شناخت</th>
                           <th className="p-3">نام / لیبل (ترمیم کریں)</th>
+                          <th className="p-3">پاسورڈ / PIN (ترمیم کریں)</th>
                           <th className="p-3 text-center">نوعیت / اختیار</th>
                           <th className="p-3 text-center w-24">کارروائی</th>
                         </tr>
@@ -1438,11 +1741,24 @@ export default function App() {
                               <input 
                                 type="text"
                                 value={b.label}
+                                disabled={activeBranch !== 'nazim'}
                                 onChange={(e) => {
                                   const updatedLabel = e.target.value;
                                   setBranches(prev => prev.map(item => item.id === b.id ? { ...item, label: updatedLabel } : item));
                                 }}
-                                className="w-full bg-transparent border-none outline-none font-bold text-slate-800 focus:text-emerald-600"
+                                className="w-full bg-transparent border-none outline-none font-bold text-slate-800 focus:text-emerald-600 disabled:text-slate-500"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <input 
+                                type="text"
+                                value={b.password || (b.id === 'nazim' ? '9211' : '123')}
+                                disabled={activeBranch !== 'nazim'}
+                                onChange={(e) => {
+                                  const updatedPass = e.target.value;
+                                  setBranches(prev => prev.map(item => item.id === b.id ? { ...item, password: updatedPass } : item));
+                                }}
+                                className="w-full bg-slate-50/50 border border-slate-200/50 rounded-lg px-2.5 py-1.5 font-bold font-mono text-slate-800 focus:text-emerald-600 outline-none focus:ring-1 focus:ring-emerald-500 disabled:text-slate-400 disabled:bg-transparent disabled:border-none"
                               />
                             </td>
                             <td className="p-3 text-center">
@@ -1460,20 +1776,24 @@ export default function App() {
                               {b.id === 'nazim' ? (
                                 <span className="text-slate-400 text-[10px]">مستقل</span>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (confirm(`کیا آپ واقعی کاؤنٹر "${b.label}" خارج کرنا چاہتے ہیں؟`)) {
-                                      setBranches(prev => prev.filter(item => item.id !== b.id));
-                                      if (activeBranch === b.id) {
-                                        setActiveBranch('nazim');
+                                activeBranch === 'nazim' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`کیا آپ واقعی کاؤنٹر "${b.label}" خارج کرنا چاہتے ہیں؟`)) {
+                                        setBranches(prev => prev.filter(item => item.id !== b.id));
+                                        if (activeBranch === b.id) {
+                                          setActiveBranch('nazim');
+                                        }
                                       }
-                                    }
-                                  }}
-                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded"
-                                >
-                                  حذف کریں
-                                </button>
+                                    }}
+                                    className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded"
+                                  >
+                                    حذف کریں
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400 text-[10px]">محفوظ</span>
+                                )
                               )}
                             </td>
                           </tr>
