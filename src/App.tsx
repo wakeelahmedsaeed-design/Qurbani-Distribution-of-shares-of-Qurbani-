@@ -138,6 +138,50 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [pendingActiveBranch, setPendingActiveBranch] = useState<string>('nazim');
 
+  // Dialog state for notifications and confirmations (solves secure sandboxed iframe prompt blocks)
+  const [appDialog, setAppDialog] = useState<{
+    isOpen: boolean;
+    type: 'alert' | 'confirm';
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+    confirmText?: string;
+    cancelText?: string;
+  } | null>(null);
+
+  const triggerAlert = (message: string, title = 'اطلاع') => {
+    setAppDialog({
+      isOpen: true,
+      type: 'alert',
+      title,
+      message,
+      onConfirm: () => setAppDialog(null),
+      confirmText: 'ٹھیک ہے'
+    });
+  };
+
+  const triggerConfirm = (message: string, onConfirm: () => void, title = 'تصدیق مطلوب ہے') => {
+    setAppDialog({
+      isOpen: true,
+      type: 'confirm',
+      title,
+      message,
+      onConfirm: () => {
+        setAppDialog(null);
+        onConfirm();
+      },
+      onCancel: () => setAppDialog(null),
+      confirmText: 'جی ہاں، بدلیں',
+      cancelText: 'منسوخ کریں'
+    });
+  };
+
+  // Save globalShareAmount changes
+  useEffect(() => {
+    localStorage.setItem('qurbani_global_share_amount_v5', globalShareAmount.toString());
+  }, [globalShareAmount]);
+
   // Recent Global Activities logs for multi-branch monitoring
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
     const saved = localStorage.getItem('qurbani_activity_logs_v4');
@@ -393,11 +437,16 @@ export default function App() {
   const removeAnimal = (id: number) => {
     const animalObj = animals.find(a => a.id === id);
     if (!animalObj) return;
-    if (window.confirm(`کیا آپ واقعی ${animalObj.label} اور اس کا تمام ریکارڈ خارج کرنا چاہتے ہیں؟`)) {
-      setAnimals(prev => prev.filter(a => a.id !== id));
-      if (selectedAnimalId === id) setView('list');
-      logActivity('remove_animal', `خارج شدہ: ${animalObj.label} کو سسٹم سے خارج کر دیا گیا`);
-    }
+    triggerConfirm(
+      `کیا آپ واقعی ${animalObj.label} اور اس کا تمام ریکارڈ خارج کرنا چاہتے ہیں؟`,
+      () => {
+        setAnimals(prev => prev.filter(a => a.id !== id));
+        if (selectedAnimalId === id) setView('list');
+        logActivity('remove_animal', `خارج شدہ: ${animalObj.label} کو سسٹم سے خارج کر دیا گیا`);
+        triggerAlert(`${animalObj.label} کو کامیابی سے خارج کر دیا گیا ہے۔`, 'کامیابی');
+      },
+      'جانور کو خارج کریں'
+    );
   };
 
   const updateAnimalLabel = (id: number, label: string) => {
@@ -865,12 +914,16 @@ export default function App() {
 
             <button
               onClick={() => {
-                if (window.confirm('کیا آپ واقعی اپنے لاگ ان سیشن سے لاگ آؤٹ ہو کر دوسرا اکاؤنٹ منتخب کرنا چاہتے ہیں؟')) {
-                  setIsAuthenticated(false);
-                  localStorage.setItem('qurbani_is_authenticated_v5', 'false');
-                  setLoginPassword('');
-                  setLoginError('');
-                }
+                triggerConfirm(
+                  'کیا آپ واقعی اپنے لاگ ان سیشن سے لاگ آؤٹ ہو کر دوسرا اکاؤنٹ منتخب کرنا چاہتے ہیں؟',
+                  () => {
+                    setIsAuthenticated(false);
+                    localStorage.setItem('qurbani_is_authenticated_v5', 'false');
+                    setLoginPassword('');
+                    setLoginError('');
+                  },
+                  'لاگ آؤٹ تصدیق'
+                );
               }}
               className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-3.5 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
               title="سیشن سے لاگ آؤٹ کر کے دوسرے کاؤنٹر میں منتخب لاگ ان کریں"
@@ -1517,14 +1570,23 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             // Retroactively apply to ALL unpaid shares
-                            if (window.confirm(`کیا آپ واقعی تمام موجودہ گایوں کے "غیر ادا شدہ" (unpaid) حصوں کی رقم تبدیل کر کے ${globalShareAmount.toLocaleString('ur-PK')} روپے کرنا چاہتے ہیں؟`)) {
-                              setAnimals(prev => prev.map(a => ({
-                                ...a,
-                                shares: a.shares.map(s => s.isPaid ? s : { ...s, amountPaid: globalShareAmount })
-                              })));
-                              alert('کامیابی! تمام غیر ادا شدہ حصوں کی رقم نئی رقم کے مطابق تبدیل کر دی گئی ہے۔');
-                              logActivity('add_animal', `تمام غیر ادا شدہ حصوں کی رقم یکمشت تبدیل کر کے ${globalShareAmount.toLocaleString('ur-PK')} روپے مقرر کی گئی`);
-                            }
+                            triggerConfirm(
+                              `کیا آپ واقعی تمام موجودہ گایوں کے "غیر ادا شدہ" (unpaid) حصوں کی رقم تبدیل کر کے ${globalShareAmount.toLocaleString('ur-PK')} روپے کرنا چاہتے ہیں؟`,
+                              () => {
+                                setAnimals(prev => {
+                                  const updated = prev.map(a => ({
+                                    ...a,
+                                    shares: a.shares.map(s => s.isPaid ? s : { ...s, amountPaid: globalShareAmount })
+                                  }));
+                                  localStorage.setItem('qurbani_data_v4', JSON.stringify(updated));
+                                  broadcastSync(updated, deposits, activityLogs);
+                                  return updated;
+                                });
+                                triggerAlert('کامیابی! تمام غیر ادا شدہ حصوں کی رقم نئی رقم کے مطابق یکمشت تبدیل کر دی گئی ہے۔', 'کامیابی');
+                                logActivity('add_animal', `تمام غیر ادا شدہ حصوں کی رقم یکمشت تبدیل کر کے ${globalShareAmount.toLocaleString('ur-PK')} روپے مقرر کی گئی`);
+                              },
+                              'رقم یکمشت تبدیل کریں'
+                            );
                           }}
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-md text-center"
                         >
@@ -1780,12 +1842,17 @@ export default function App() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (confirm(`کیا آپ واقعی کاؤنٹر "${b.label}" خارج کرنا چاہتے ہیں؟`)) {
-                                        setBranches(prev => prev.filter(item => item.id !== b.id));
-                                        if (activeBranch === b.id) {
-                                          setActiveBranch('nazim');
-                                        }
-                                      }
+                                      triggerConfirm(
+                                        `کیا آپ واقعی کاؤنٹر "${b.label}" خارج کرنا چاہتے ہیں؟`,
+                                        () => {
+                                          setBranches(prev => prev.filter(item => item.id !== b.id));
+                                          if (activeBranch === b.id) {
+                                            setActiveBranch('nazim');
+                                          }
+                                          triggerAlert(`کاؤنٹر "${b.label}" کامیابی سے حذف ہو گیا ہے۔`, 'کامیابی');
+                                        },
+                                        'کاؤنٹر حذف کریں'
+                                      );
                                     }}
                                     className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded"
                                   >
@@ -1900,6 +1967,51 @@ export default function App() {
                   className="flex-1 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm"
                 >
                   بند کریں
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Custom Confirmation/Notification Dialog Overlay */}
+        {appDialog && appDialog.isOpen && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] overflow-y-auto" dir="rtl">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 relative flex flex-col space-y-4 border border-slate-100"
+            >
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-3 justify-start">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${appDialog.type === 'confirm' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <Info size={20} />
+                </div>
+                <h4 className="text-base font-black text-slate-800 font-sans">{appDialog.title}</h4>
+              </div>
+
+              <p className="text-sm text-slate-600 font-bold leading-relaxed text-right">
+                {appDialog.message}
+              </p>
+
+              <div className="flex gap-2 pt-2">
+                {appDialog.type === 'confirm' && (
+                  <button 
+                    onClick={() => {
+                      if (appDialog.onCancel) appDialog.onCancel();
+                      setAppDialog(null);
+                    }}
+                    className="flex-1 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm transition-all active:scale-95"
+                  >
+                    {appDialog.cancelText || 'منسوخ کریں'}
+                  </button>
+                )}
+                <button 
+                  onClick={() => {
+                    appDialog.onConfirm();
+                  }}
+                  className={`flex-1 font-bold py-2.5 rounded-xl text-sm text-white transition-all active:scale-95 shadow-md ${appDialog.type === 'confirm' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/15' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/15'}`}
+                >
+                  {appDialog.confirmText || 'ٹھیک ہے'}
                 </button>
               </div>
             </motion.div>
