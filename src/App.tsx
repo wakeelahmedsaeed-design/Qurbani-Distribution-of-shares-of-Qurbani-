@@ -2425,14 +2425,14 @@ export default function App() {
               className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative flex flex-col justify-between"
             >
               {/* Slip Layout to show printable format */}
-              <div id="printable-area" className="border-4 border-double border-emerald-900/30 p-4 rounded-xl space-y-4">
+              <div id="printable-area" dir="rtl" className="border-4 border-double border-emerald-900/30 p-6 rounded-xl space-y-4 text-right bg-white" style={{ direction: 'rtl', textAlign: 'right' }}>
                 <div className="text-center border-b border-slate-200 pb-3">
                   <Beef className="mx-auto text-emerald-600 mb-1" size={32} />
                   <h3 className="text-xl font-black text-slate-900">اجتماعی قربانی سوسائٹی</h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Qurbani Management Office Receipt</p>
                 </div>
 
-                <div className="flex justify-between items-center text-xs text-slate-500 font-bold">
+                <div className="flex justify-between items-center text-xs text-slate-500 font-bold" dir="rtl" style={{ direction: 'rtl' }}>
                   <span>رسید نمبر: S-{activeSlip.share.id}</span>
                   <span>تاریخ: {new Date().toLocaleDateString('ur-PK') || '2026'}</span>
                 </div>
@@ -2506,12 +2506,144 @@ export default function App() {
                     onClick={() => {
                       const printable = document.getElementById('printable-area');
                       if (printable) {
-                        const printContent = printable.innerHTML;
+                        const origBodyDir = document.body.getAttribute('dir');
+                        const origBodyClass = document.body.className;
+                        
+                        // Solidified media print rules to secure RTL block orientation (titles right, entries left) globally in all browsers
+                        const styleBlock = `
+                          <style>
+                            @media print {
+                              body {
+                                direction: rtl !important;
+                                text-align: right !important;
+                                margin: 0 !important;
+                                padding: 24px !important;
+                                color: #000000 !important;
+                                background-color: #ffffff !important;
+                                -webkit-print-color-adjust: exact !important;
+                                print-color-adjust: exact !important;
+                              }
+                              #printable-area {
+                                border: 4px double #064e3b !important;
+                                padding: 24px !important;
+                                margin: 0 auto !important;
+                                width: 100% !important;
+                                max-width: 480px !important;
+                                direction: rtl !important;
+                                text-align: right !important;
+                                display: block !important;
+                              }
+                              .flex {
+                                display: flex !important;
+                                flex-direction: row !important;
+                                justify-content: space-between !important;
+                                align-items: center !important;
+                              }
+                              .justify-between {
+                                justify-content: space-between !important;
+                              }
+                              .space-y-4 > * + * {
+                                margin-top: 1rem !important;
+                              }
+                              .space-y-2\\.5 > * + * {
+                                margin-top: 0.625rem !important;
+                              }
+                              .pb-3 {
+                                padding-bottom: 0.75rem !important;
+                              }
+                              .pb-1\\.5 {
+                                padding-bottom: 0.375rem !important;
+                              }
+                              .mt-0\\.5 {
+                                margin-top: 0.125rem !important;
+                              }
+                              .pt-2 {
+                                padding-top: 0.5rem !important;
+                              }
+                              .pt-6 {
+                                padding-top: 1.5rem !important;
+                              }
+                              .border-b {
+                                border-bottom: 1px solid #e2e8f0 !important;
+                              }
+                              .border-t {
+                                border-top: 1px solid #e2e8f0 !important;
+                              }
+                              .text-center {
+                                text-align: center !important;
+                              }
+                              .text-right {
+                                text-align: right !important;
+                              }
+                              .text-left {
+                                text-align: left !important;
+                              }
+                              .text-slate-400 {
+                                color: #64748b !important;
+                              }
+                              .text-slate-500 {
+                                color: #64748b !important;
+                              }
+                              .text-slate-800 {
+                                color: #1e293b !important;
+                              }
+                              .text-slate-900 {
+                                color: #0f172a !important;
+                              }
+                              .text-emerald-600 {
+                                color: #059669 !important;
+                              }
+                              .text-emerald-700 {
+                                color: #047857 !important;
+                              }
+                              .text-emerald-800 {
+                                color: #065f46 !important;
+                              }
+                              .text-black {
+                                color: #000000 !important;
+                              }
+                              /* Force flex flow correctly so left is value and right is label under all engine versions */
+                              .flex.justify-between > * {
+                                display: inline-block !important;
+                              }
+                              .flex.justify-between {
+                                display: flex !important;
+                                flex-direction: row !important;
+                              }
+                              @page {
+                                size: auto;
+                                margin: 4mm 8mm 4mm 8mm;
+                              }
+                            }
+                          </style>
+                        `;
+
+                        // Compose full outer HTML so class lists and IDs are maintained
+                        const printFrameContent = `
+                          <div dir="rtl" class="urdu-text" style="direction: rtl; text-align: right; width: 100%; min-height: 100%; background: white;">
+                            ${printable.outerHTML}
+                            ${styleBlock}
+                          </div>
+                        `;
+
                         const originalContent = document.body.innerHTML;
-                        document.body.innerHTML = printContent;
-                        window.print();
-                        document.body.innerHTML = originalContent;
-                        window.location.reload(); // simple page restore after system print UI dismiss
+                        document.body.innerHTML = printFrameContent;
+                        document.body.setAttribute('dir', 'rtl');
+                        document.body.className = "urdu-text bg-white";
+                        
+                        setTimeout(() => {
+                          window.print();
+                          
+                          document.body.innerHTML = originalContent;
+                          if (origBodyDir) {
+                            document.body.setAttribute('dir', origBodyDir);
+                          } else {
+                            document.body.removeAttribute('dir');
+                          }
+                          document.body.className = origBodyClass;
+                          
+                          window.location.reload();
+                        }, 50);
                       }
                     }}
                     className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 text-white py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95 cursor-pointer"
