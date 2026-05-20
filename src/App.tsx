@@ -27,6 +27,7 @@ import {
   Briefcase,
   PiggyBank,
   Lock,
+  Calendar,
   LogIn,
   LogOut,
   Key
@@ -35,6 +36,8 @@ import {
 interface Share {
   id: string; // "animalId-shareIdx"
   name: string;
+  phone?: string;
+  address?: string;
   isDistributed: boolean;
   distributionTime?: string;
   isPaid: boolean;
@@ -93,9 +96,30 @@ export default function App() {
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // default global share amount managed by Nazim
+  // active year / session state
+  const [activeYear, setActiveYear] = useState<string>(() => {
+    return localStorage.getItem('qurbani_active_year_v2') || '2026';
+  });
+
+  const [years, setYears] = useState<string[]>(() => {
+    const saved = localStorage.getItem('qurbani_years_list_v1');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return ['2026'];
+  });
+
+  const [newYearInput, setNewYearInput] = useState('');
+
+  // default global share amount managed by Nazim, specific to active year
   const [globalShareAmount, setGlobalShareAmount] = useState<number>(() => {
-    const saved = localStorage.getItem('qurbani_global_share_amount_v5');
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const saved = localStorage.getItem(`qurbani_global_share_amount_v5_${activeYr}`);
     if (saved) {
       const parsed = parseInt(saved);
       if (!isNaN(parsed) && parsed > 0) return parsed;
@@ -177,14 +201,10 @@ export default function App() {
     });
   };
 
-  // Save globalShareAmount changes
-  useEffect(() => {
-    localStorage.setItem('qurbani_global_share_amount_v5', globalShareAmount.toString());
-  }, [globalShareAmount]);
-
-  // Recent Global Activities logs for multi-branch monitoring
+  // Recent Global Activities logs for multi-branch monitoring, specific to active year
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
-    const saved = localStorage.getItem('qurbani_activity_logs_v4');
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const saved = localStorage.getItem(`qurbani_activity_logs_v5_${activeYr}`);
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -198,21 +218,7 @@ export default function App() {
         timestamp: '08:45 AM',
         branch: 'کورنگی کاؤنٹر',
         type: 'add_animal',
-        details: 'ابتدائی 60 گائے کا اندراج کامیابی سے کیا گیا'
-      },
-      {
-        id: '2',
-        timestamp: '09:12 AM',
-        branch: 'لانڈھی کاؤنٹر',
-        type: 'payment',
-        details: 'گائے نمبر 1 کے حصہ دار 1 کی رقم (45,000) موصول ہوئی'
-      },
-      {
-        id: '3',
-        timestamp: '10:05 AM',
-        branch: 'قیوم آباد کاؤنٹر',
-        type: 'payment',
-        details: 'گائے نمبر 5 کے حصہ دار 4 کی رقم (45,000) موصول ہوئی'
+        details: `سال ${activeYr} کا لائیو کام کامیابی سے شروع کیا گیا`
       }
     ];
   });
@@ -224,10 +230,13 @@ export default function App() {
   // slip state
   const [activeSlip, setActiveSlip] = useState<{ animal: Animal; share: Share; index: number } | null>(null);
 
-  // loading animals with migration fallbacks
+  // loading animals with migration fallbacks, specific to active year
   const [animals, setAnimals] = useState<Animal[]>(() => {
-    const initialGlobalAmount = parseInt(localStorage.getItem('qurbani_global_share_amount_v5') || '45000') || 45000;
-    const saved = localStorage.getItem('qurbani_data_v4');
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const savedAmount = localStorage.getItem(`qurbani_global_share_amount_v5_${activeYr}`);
+    const initialGlobalAmount = savedAmount ? (parseInt(savedAmount) || 45000) : 45000;
+    
+    const saved = localStorage.getItem(`qurbani_data_v4_${activeYr}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -237,6 +246,8 @@ export default function App() {
             shares: Array.isArray(animal.shares) ? animal.shares.map((share: any) => ({
               id: share.id,
               name: share.name || '',
+              phone: share.phone || '',
+              address: share.address || '',
               isDistributed: !!share.isDistributed,
               distributionTime: share.distributionTime || undefined,
               isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
@@ -252,13 +263,15 @@ export default function App() {
       }
     }
 
-    // Default 60 animals as community benchmark
+    // Default 60 animals as community benchmark for the active year
     return Array.from({ length: 60 }, (_, i) => ({
       id: i + 1,
       label: `گائے نمبر ${i + 1}`,
       shares: Array.from({ length: SHARES_PER_ANIMAL }, (_, j) => ({
         id: `${i + 1}-${j + 1}`,
         name: `حصہ دار ${j + 1}`,
+        phone: '',
+        address: '',
         isDistributed: false,
         isPaid: false,
         amountPaid: initialGlobalAmount,
@@ -267,9 +280,10 @@ export default function App() {
     }));
   });
 
-  // accounts ledger state
+  // accounts ledger state, specific to active year
   const [deposits, setDeposits] = useState<DepositRecord[]>(() => {
-    const saved = localStorage.getItem('qurbani_deposits_v4');
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const saved = localStorage.getItem(`qurbani_deposits_v4_${activeYr}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -294,19 +308,125 @@ export default function App() {
   const [depositReference, setDepositReference] = useState('');
 
   // broadcast synchronization channel
-  const broadcastSync = (updatedAnimals: Animal[], updatedDeposits: DepositRecord[], updatedLogs: ActivityLog[], updatedBranches?: Branch[]) => {
+  const broadcastSync = (updatedAnimals: Animal[], updatedDeposits: DepositRecord[], updatedLogs: ActivityLog[], updatedBranches?: Branch[], updatedYear?: string) => {
     try {
       const channel = new BroadcastChannel('qurbani_realtime_sync');
       channel.postMessage({
         animals: updatedAnimals,
         deposits: updatedDeposits,
         logs: updatedLogs,
-        branches: updatedBranches || branches
+        branches: updatedBranches || branches,
+        year: updatedYear || activeYear
       });
       channel.close();
     } catch (e) {
       console.warn('Sync broadcast not supported in sandbox context', e);
     }
+  };
+
+  // Synchronous and complete dynamic Year switcher
+  const changeYear = (newYear: string) => {
+    setActiveYear(newYear);
+    localStorage.setItem('qurbani_active_year_v2', newYear);
+    
+    // Load new year global nominal share amount
+    const savedAmount = localStorage.getItem(`qurbani_global_share_amount_v5_${newYear}`);
+    let newAmount = 45000;
+    if (savedAmount) {
+      const parsed = parseInt(savedAmount);
+      if (!isNaN(parsed) && parsed > 0) newAmount = parsed;
+    }
+    setGlobalShareAmount(newAmount);
+
+    // Load new year animals
+    const savedData = localStorage.getItem(`qurbani_data_v4_${newYear}`);
+    let loadedAnimals: Animal[] = [];
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        if (Array.isArray(parsed)) {
+          loadedAnimals = parsed.map((animal: any) => ({
+            ...animal,
+            shares: Array.isArray(animal.shares) ? animal.shares.map((share: any) => ({
+              id: share.id,
+              name: share.name || '',
+              phone: share.phone || '',
+              address: share.address || '',
+              isDistributed: !!share.isDistributed,
+              distributionTime: share.distributionTime || undefined,
+              isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
+              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : newAmount,
+              expectedDeliveryTime: share.expectedDeliveryTime || '01:00 PM',
+              paidByBranchId: share.paidByBranchId || undefined,
+              paidByBranchLabel: share.paidByBranchLabel || undefined
+            })) : []
+          })).sort((a: any, b: any) => a.id - b.id);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    if (loadedAnimals.length === 0) {
+      loadedAnimals = Array.from({ length: 60 }, (_, i) => ({
+        id: i + 1,
+        label: `گائے نمبر ${i + 1}`,
+        shares: Array.from({ length: SHARES_PER_ANIMAL }, (_, j) => ({
+          id: `${i + 1}-${j + 1}`,
+          name: `حصہ دار ${j + 1}`,
+          phone: '',
+          address: '',
+          isDistributed: false,
+          isPaid: false,
+          amountPaid: newAmount,
+          expectedDeliveryTime: '01:00 PM'
+        }))
+      }));
+    }
+    setAnimals(loadedAnimals);
+
+    // Load new year deposits
+    const savedDeps = localStorage.getItem(`qurbani_deposits_v4_${newYear}`);
+    let newDeps: DepositRecord[] = [];
+    if (savedDeps) {
+      try {
+        const parsed = JSON.parse(savedDeps);
+        if (Array.isArray(parsed)) {
+          newDeps = parsed.map((dep: any) => ({
+            ...dep,
+            destination: dep.destination || 'bank'
+          }));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setDeposits(newDeps);
+
+    // Load new year activity logs
+    const savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${newYear}`);
+    let newLogs: ActivityLog[] = [];
+    if (savedLogs) {
+      try {
+        newLogs = JSON.parse(savedLogs);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    if (newLogs.length === 0) {
+      newLogs = [
+        {
+          id: '1',
+          timestamp: '08:45 AM',
+          branch: 'کورنگی کاؤنٹر',
+          type: 'add_animal',
+          details: `سال ${newYear} کے لائیو نظام کا آغاز از خود کار طریقے سے ہو گیا`
+        }
+      ];
+    }
+    setActivityLogs(newLogs);
+    
+    // Broadcast changes with activeYear included in sync sequence
+    broadcastSync(loadedAnimals, newDeps, newLogs, branches, newYear);
   };
 
   // logger helper
@@ -323,25 +443,33 @@ export default function App() {
         details
       };
       const updated = [newLog, ...prev].slice(0, 50);
-      localStorage.setItem('qurbani_activity_logs_v4', JSON.stringify(updated));
+      localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}`, JSON.stringify(updated));
       return updated;
     });
   };
 
   useEffect(() => {
-    localStorage.setItem('qurbani_data_v4', JSON.stringify(animals));
+    localStorage.setItem(`qurbani_data_v4_${activeYear}`, JSON.stringify(animals));
     broadcastSync(animals, deposits, activityLogs);
-  }, [animals]);
+  }, [animals, activeYear]);
 
   useEffect(() => {
-    localStorage.setItem('qurbani_deposits_v4', JSON.stringify(deposits));
+    localStorage.setItem(`qurbani_deposits_v4_${activeYear}`, JSON.stringify(deposits));
     broadcastSync(animals, deposits, activityLogs);
-  }, [deposits]);
+  }, [deposits, activeYear]);
 
   useEffect(() => {
-    localStorage.setItem('qurbani_activity_logs_v4', JSON.stringify(activityLogs));
+    localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}`, JSON.stringify(activityLogs));
     broadcastSync(animals, deposits, activityLogs);
-  }, [activityLogs]);
+  }, [activityLogs, activeYear]);
+
+  useEffect(() => {
+    localStorage.setItem(`qurbani_global_share_amount_v5_${activeYear}`, globalShareAmount.toString());
+  }, [globalShareAmount, activeYear]);
+
+  useEffect(() => {
+    localStorage.setItem('qurbani_years_list_v1', JSON.stringify(years));
+  }, [years]);
 
   useEffect(() => {
     localStorage.setItem('qurbani_branches_v5', JSON.stringify(branches));
@@ -357,14 +485,18 @@ export default function App() {
     try {
       const channel = new BroadcastChannel('qurbani_realtime_sync');
       channel.onmessage = (event) => {
-        const { animals: incomingAnimals, deposits: incomingDeposits, logs: incomingLogs, branches: incomingBranches } = event.data;
-        if (incomingAnimals && JSON.stringify(incomingAnimals) !== localStorage.getItem('qurbani_data_v4')) {
+        const { animals: incomingAnimals, deposits: incomingDeposits, logs: incomingLogs, branches: incomingBranches, year: incomingYear } = event.data;
+        if (incomingYear && incomingYear !== activeYear) {
+          changeYear(incomingYear);
+          return;
+        }
+        if (incomingAnimals && JSON.stringify(incomingAnimals) !== localStorage.getItem(`qurbani_data_v4_${activeYear}`)) {
           setAnimals(incomingAnimals);
         }
-        if (incomingDeposits && JSON.stringify(incomingDeposits) !== localStorage.getItem('qurbani_deposits_v4')) {
+        if (incomingDeposits && JSON.stringify(incomingDeposits) !== localStorage.getItem(`qurbani_deposits_v4_${activeYear}`)) {
           setDeposits(incomingDeposits);
         }
-        if (incomingLogs && JSON.stringify(incomingLogs) !== localStorage.getItem('qurbani_activity_logs_v4')) {
+        if (incomingLogs && JSON.stringify(incomingLogs) !== localStorage.getItem(`qurbani_activity_logs_v5_${activeYear}`)) {
           setActivityLogs(incomingLogs);
         }
         if (incomingBranches && JSON.stringify(incomingBranches) !== localStorage.getItem('qurbani_branches_v5')) {
@@ -377,7 +509,7 @@ export default function App() {
     } catch (e) {
       console.warn('Broadcast channel listener failed', e);
     }
-  }, [branches]);
+  }, [branches, activeYear]);
 
   // Suggested ID is the first missing ID or next max number
   const suggestedNextId = useMemo(() => {
@@ -504,6 +636,42 @@ export default function App() {
     }));
   };
 
+  const updateSharePhone = (animalId: number, shareId: string, phone: string) => {
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const sh = targetAnimal.shares.find(s => s.id === shareId);
+      if (sh && sh.isPaid && activeBranch !== 'nazim' && sh.paidByBranchId && sh.paidByBranchId !== activeBranch) {
+        return; // secure lock
+      }
+    }
+    // Automatically sanitize phone input to remove spaces and dashes
+    const cleanPhone = phone.replace(/[-\s]/g, '');
+    setAnimals(prev => prev.map(a => {
+      if (a.id !== animalId) return a;
+      return {
+        ...a,
+        shares: a.shares.map(s => s.id === shareId ? { ...s, phone: cleanPhone } : s)
+      };
+    }));
+  };
+
+  const updateShareAddress = (animalId: number, shareId: string, address: string) => {
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const sh = targetAnimal.shares.find(s => s.id === shareId);
+      if (sh && sh.isPaid && activeBranch !== 'nazim' && sh.paidByBranchId && sh.paidByBranchId !== activeBranch) {
+        return; // secure lock
+      }
+    }
+    setAnimals(prev => prev.map(a => {
+      if (a.id !== animalId) return a;
+      return {
+        ...a,
+        shares: a.shares.map(s => s.id === shareId ? { ...s, address } : s)
+      };
+    }));
+  };
+
   const togglePayment = (animalId: number, shareId: string) => {
     let oldPaid = false;
     let shareName = '';
@@ -537,11 +705,13 @@ export default function App() {
           if (s.id !== shareId) return s;
           oldPaid = s.isPaid;
           shareName = s.name;
-          shareAmount = s.amountPaid;
           const isNowPaid = !s.isPaid;
+          const newAmount = isNowPaid ? globalShareAmount : s.amountPaid;
+          shareAmount = newAmount;
           return { 
             ...s, 
             isPaid: isNowPaid,
+            amountPaid: newAmount,
             paidByBranchId: isNowPaid ? activeBranch : undefined,
             paidByBranchLabel: isNowPaid ? (branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر') : undefined
           };
@@ -688,6 +858,66 @@ export default function App() {
       paymentPercentage: totalShares > 0 ? Math.round((paidCount / totalShares) * 100) : 0
     };
   }, [animals, deposits]);
+
+  // Dynamic collections per branch
+  const branchCollections = useMemo(() => {
+    const collections: { [branchId: string]: { amount: number; count: number } } = {};
+    
+    // Initialize standard branches
+    branches.forEach(b => {
+      collections[b.id] = { amount: 0, count: 0 };
+    });
+    
+    // Add default fallbacks
+    DEFAULT_BRANCHES.forEach(b => {
+      if (!collections[b.id]) {
+        collections[b.id] = { amount: 0, count: 0 };
+      }
+    });
+
+    // Handle unknown branch
+    collections['unknown'] = { amount: 0, count: 0 };
+
+    // Group animals shares by branch
+    animals.forEach(animal => {
+      animal.shares.forEach(share => {
+        if (share.isPaid) {
+          const bId = share.paidByBranchId || 'unknown';
+          if (!collections[bId]) {
+            collections[bId] = { amount: 0, count: 0 };
+          }
+          collections[bId].amount += share.amountPaid;
+          collections[bId].count += 1;
+        }
+      });
+    });
+
+    return collections;
+  }, [animals, branches]);
+
+  const grandTotalAmount = useMemo(() => {
+    let total = 0;
+    animals.forEach(animal => {
+      animal.shares.forEach(share => {
+        if (share.isPaid) {
+          total += share.amountPaid;
+        }
+      });
+    });
+    return total;
+  }, [animals]);
+
+  const grandTotalCount = useMemo(() => {
+    let count = 0;
+    animals.forEach(animal => {
+      animal.shares.forEach(share => {
+        if (share.isPaid) {
+          count += 1;
+        }
+      });
+    });
+    return count;
+  }, [animals]);
 
   const filteredAnimals = animals.filter(a => 
     a.label.includes(searchQuery) || 
@@ -931,6 +1161,12 @@ export default function App() {
               <LogOut size={14} /> سیشن لاگ آؤٹ / تبدیل کریں
             </button>
 
+            <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-xl px-3 py-1.5 shadow-sm font-bold">
+              <Calendar size={14} className="text-indigo-500" />
+              <span className="text-[10px] text-indigo-400 block font-bold leading-none">سال:</span>
+              <span className="text-xs font-black text-indigo-950 font-mono leading-none">{activeYear}</span>
+            </div>
+
             <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-xl px-3 py-1.5">
               <RotateCw className="text-emerald-500 animate-spin" size={14} />
               <span className="text-[10px] font-bold">لائیو کلاؤڈ سنک فعال ہے</span>
@@ -1007,55 +1243,116 @@ export default function App() {
                       <ScrollText size={32} />
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-slate-800">قربانی مہم کے لیے مشترکہ انتظام</h3>
-                      <p className="text-slate-500 max-w-lg mt-1.5 leading-relaxed text-xs">
+                      <h3 className="text-xl font-black text-slate-800 font-sans">قربانی مہم کے لیے مشترکہ انتظام</h3>
+                      <p className="text-slate-500 max-w-lg mt-1.5 leading-relaxed text-xs font-sans">
                         ہر برانچ (کورنگی، لانڈھی، قیوم آباد، ہیڈ آفس) کے وصول کنندگان اسی سافٹ وئیر پر بیک وقت کام کرسکتے ہیں۔ جوں ہی کوئی وصولی ہوگی، مانیٹر پر لائیو سنک ہوگی!
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-3 justify-center">
                       <button 
                         onClick={() => setView('list')}
-                        className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 text-xs shadow-md"
+                        className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 text-xs shadow-md active:scale-95"
                       >
                         <ScrollText size={16} /> گائے کی لسٹ اور ٹریکنگ
                       </button>
                       <button 
                         onClick={() => setView('deposits')}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-1.5 text-xs"
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-1.5 text-xs active:scale-95"
                       >
                         <Coins size={16} /> بینک و کیش دراز منتقلی
                       </button>
                     </div>
                   </div>
 
-                  {/* Synchronized Multi-branch Activities Feed */}
-                  <div className="bg-slate-900 text-slate-100 rounded-2xl p-5 flex flex-col border border-slate-800">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3 shrink-0">
+                  {/* Synchronized Multi-branch Collections & Activities Feed with Light Green Background & Thick Black Border */}
+                  <div className="bg-[#E8F5E9] text-slate-900 rounded-2xl p-5 flex flex-col border-4 border-slate-950 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" dir="rtl">
+                    <div className="flex items-center justify-between border-b-2 border-slate-950 pb-2.5 mb-3 shrink-0">
                       <div className="flex items-center gap-2">
-                        <Activity className="text-emerald-400 animate-pulse" size={16} />
-                        <span className="text-xs font-black tracking-wide text-white">حالیہ سرگرمیاں (لائیو برانچ سنک)</span>
+                        <Activity className="text-emerald-800 animate-pulse" size={18} />
+                        <span className="text-xs font-black tracking-wide text-slate-900 font-sans">کاؤنٹر وار وصولی رپورٹ (لائیو سنک)</span>
                       </div>
-                      <span className="text-[9px] bg-emerald-950 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-900 shrink-0">
-                        سسٹم لائیو
+                      <span className="text-[9px] bg-emerald-800 text-white font-black px-2 py-0.5 rounded-full uppercase shrink-0">
+                        لائیو
                       </span>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto max-h-[160px] pr-1 space-y-2.5">
-                      {activityLogs.map((log) => (
-                        <div key={log.id} className="text-[11px] leading-relaxed border-b border-slate-800/40 pb-2 last:border-none">
-                          <div className="flex justify-between items-center text-slate-500 text-[9px] mb-0.5 font-bold">
-                            <span className="text-emerald-400">{log.branch}</span>
-                            <span>{log.timestamp}</span>
+                    {/* Collections Summary Table */}
+                    <div className="space-y-2 mb-4">
+                      <div className="bg-white/90 rounded-xl p-3 border-2 border-slate-950">
+                        <table className="w-full text-xs text-right">
+                          <thead>
+                            <tr className="border-b-2 border-slate-900 text-slate-600 font-black text-[10px]">
+                              <th className="pb-1 text-right font-black">کاؤنٹر ریکارڈ</th>
+                              <th className="pb-1 text-center font-black">حصے</th>
+                              <th className="pb-1 text-left font-black">وصول شدہ رقم</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {branches.map((b) => {
+                              const bCol = branchCollections[b.id] || { amount: 0, count: 0 };
+                              return (
+                                <tr key={b.id} className="hover:bg-emerald-100/30 transition-colors">
+                                  <td className="py-2 flex items-center gap-1.5 font-bold text-slate-900 text-[11px]">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${b.color} border border-slate-950 shrink-0`}></span>
+                                    {b.label}
+                                  </td>
+                                  <td className="py-2 text-center font-extrabold font-mono text-slate-700">{bCol.count}</td>
+                                  <td className="py-2 text-left font-black font-mono text-emerald-800">
+                                    {bCol.amount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold text-slate-500">روپے</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {/* Unknown fallbacks */}
+                            {branchCollections['unknown'] && branchCollections['unknown'].amount > 0 && (
+                              <tr className="hover:bg-emerald-100/30 transition-colors">
+                                <td className="py-2 flex items-center gap-1.5 font-bold text-slate-800 text-[11px]">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-950 shrink-0"></span>
+                                  نامعلوم کاؤنٹر
+                                </td>
+                                <td className="py-2 text-center font-extrabold font-mono text-slate-700">{branchCollections['unknown'].count}</td>
+                                <td className="py-2 text-left font-black font-mono text-emerald-800">
+                                  {branchCollections['unknown'].amount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold text-slate-500">روپے</span>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-slate-950">
+                              <td className="pt-2 font-black text-slate-900 text-xs">گرانڈ ٹوٹل:</td>
+                              <td className="pt-2 text-center font-black font-mono text-slate-800 text-xs">{grandTotalCount} / {animals.length * SHARES_PER_ANIMAL}</td>
+                              <td className="pt-2 text-left font-black font-mono text-emerald-900 text-xs sm:text-sm">
+                                {grandTotalAmount.toLocaleString('ur-PK')}{' '}
+                                <span className="text-[9px] font-extrabold text-slate-650">روپے</span>
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Activities Log sub-panel */}
+                    <div className="border-t-2 border-slate-950 pt-2.5 relative">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[9px] font-black uppercase text-slate-655">سرگرمی لاگ (آخری تبدیلیاں):</span>
+                      </div>
+                      <div className="overflow-y-auto max-h-[95px] pr-1 space-y-1.5 bg-white/70 rounded-xl p-2 border border-slate-400">
+                        {activityLogs.map((log) => (
+                          <div key={log.id} className="text-[10px] leading-relaxed border-b border-slate-200 pb-1 last:border-none last:pb-0">
+                            <div className="flex justify-between items-center text-slate-500 text-[8px] mb-0.5 font-bold">
+                              <span className="text-emerald-800 font-black">{log.branch}</span>
+                              <span>{log.timestamp}</span>
+                            </div>
+                            <p className="text-slate-805 font-medium">{log.details}</p>
                           </div>
-                          <p className="text-slate-200">{log.details}</p>
-                        </div>
-                      ))}
-                      {activityLogs.length === 0 && (
-                        <p className="text-slate-500 text-center text-xs py-4">اب تک کوئی لائیو سرگرمی نہیں ہوئی ہے۔</p>
-                      )}
+                        ))}
+                        {activityLogs.length === 0 && (
+                          <p className="text-slate-400 text-center text-[10px] py-1">اب تک کوئی لائیو سرگرمی نہیں ہوئی ہے۔</p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>                  {/* Urdu Guidelines & Help info */}
+                </div>
                   <div className="bg-emerald-900 rounded-2xl p-6 text-white flex flex-col justify-between relative overflow-hidden">
                     <div className="relative z-10 space-y-4">
                       <div className="flex items-center gap-2 text-emerald-400">
@@ -1064,7 +1361,7 @@ export default function App() {
                       </div>
                       <h3 className="text-lg font-bold">بیک وقت انتظام اور رسیدیں</h3>
                       <ul className="text-emerald-100/70 text-xs list-disc pr-4 space-y-2">
-                        <li>ہر حصہ دار کی باری باری 45,000 روپے (یا مرضی کی رقم) بک کریں۔</li>
+                        <li>ہر حصہ دار کا حصہ/رقم بک کریں۔</li>
                         <li>وہیں سے وصولی پر پرنٹ ایبل رسید حاصل کریں۔</li>
                         <li>ایک سے زیادہ گائے کی رقم اکٹھی ہو جانے پر اکاؤنٹ مینیجر سے بینک ڈپازٹ درج کریں۔</li>
                       </ul>
@@ -1388,7 +1685,7 @@ export default function App() {
                             <div className="flex items-start gap-3 flex-1">
                               <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400 shrink-0 mt-2">{idx + 1}</span>
                               <div className="flex-1 space-y-3">
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
                                   <div className="col-span-1">
                                     <label className="text-[10px] text-slate-400 font-bold block mb-0.5">حصہ دار کا نام</label>
                                     <input 
@@ -1396,35 +1693,93 @@ export default function App() {
                                       value={s.name}
                                       disabled={isShareLocked}
                                       onChange={(e) => updateShareName(selectedAnimal.id, s.id, e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-sm disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="نام درج کریں"
                                     />
                                   </div>
 
-                                  <div>
+                                  <div className="col-span-1">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">واٹس ایپ نمبر (بغیر ڈیش)</label>
+                                    <input 
+                                      type="text" 
+                                      value={s.phone || ''}
+                                      disabled={isShareLocked}
+                                      onChange={(e) => updateSharePhone(selectedAnimal.id, s.id, e.target.value)}
+                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      placeholder="مثلاً 03001234567"
+                                    />
+                                  </div>
+
+                                  <div className="col-span-1">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">پتہ (اختیاری)</label>
+                                    <input 
+                                      type="text" 
+                                      value={s.address || ''}
+                                      disabled={isShareLocked}
+                                      onChange={(e) => updateShareAddress(selectedAnimal.id, s.id, e.target.value)}
+                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      placeholder="پتہ درج کریں"
+                                    />
+                                  </div>
+
+                                  <div className="col-span-1">
                                     <label className="text-[10px] text-slate-400 font-bold block mb-0.5">رقم (روپے)</label>
                                     <input 
                                       type="number" 
                                       value={s.amountPaid}
-                                      disabled={isShareLocked}
+                                      disabled={isShareLocked || activeBranch !== 'nazim'}
                                       onChange={(e) => updateShareAmount(selectedAnimal.id, s.id, Number(e.target.value))}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-sm focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="رقم درج کریں"
                                     />
                                   </div>
 
-                                  <div>
-                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">توقعِ فراہمیِ گوشت کا وقت</label>
-                                    <div className="relative">
+                                  <div className="col-span-1">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">وقتِ فراہمیِ گوشت</label>
+                                    <div className="flex bg-slate-50 border border-slate-200 rounded-xl overflow-hidden items-center focus-within:ring-1 focus-within:ring-emerald-500">
                                       <input 
                                         type="text" 
-                                        value={s.expectedDeliveryTime}
+                                        value={(() => {
+                                          const parts = s.expectedDeliveryTime ? s.expectedDeliveryTime.split(' ') : ['01:00', 'PM'];
+                                          if (parts.length > 2) return s.expectedDeliveryTime;
+                                          return parts[0] || '';
+                                        })()}
                                         disabled={isShareLocked}
-                                        onChange={(e) => updateShareDeliveryTime(selectedAnimal.id, s.id, e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 p-2.5 pr-8 rounded-xl font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
-                                        placeholder="مثلاً 12:30 PM یا عید کا پہلا دن"
+                                        onChange={(e) => {
+                                          const inputVal = e.target.value;
+                                          const parts = s.expectedDeliveryTime ? s.expectedDeliveryTime.split(' ') : ['01:00', 'PM'];
+                                          const period = parts[1] || 'PM';
+                                          updateShareDeliveryTime(selectedAnimal.id, s.id, `${inputVal} ${period}`);
+                                        }}
+                                        className="w-full bg-transparent p-2 rounded-l-none font-bold text-slate-800 text-xs outline-none disabled:opacity-70 disabled:bg-slate-100/70"
+                                        placeholder="مثلاً 01:00"
                                       />
-                                      <Clock className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                      <div className="flex border-r border-slate-200 h-full shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={isShareLocked}
+                                          onClick={() => {
+                                            const parts = s.expectedDeliveryTime ? s.expectedDeliveryTime.split(' ') : ['01:05', 'PM'];
+                                            const time = parts[0] || '01:00';
+                                            updateShareDeliveryTime(selectedAnimal.id, s.id, `${time} AM`);
+                                          }}
+                                          className={`px-1.5 py-2 text-[8px] font-black transition-colors ${s.expectedDeliveryTime && s.expectedDeliveryTime.endsWith('AM') ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                        >
+                                          AM
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={isShareLocked}
+                                          onClick={() => {
+                                            const parts = s.expectedDeliveryTime ? s.expectedDeliveryTime.split(' ') : ['01:05', 'PM'];
+                                            const time = parts[0] || '01:00';
+                                            updateShareDeliveryTime(selectedAnimal.id, s.id, `${time} PM`);
+                                          }}
+                                          className={`px-1.5 py-2 text-[8px] font-black transition-colors ${s.expectedDeliveryTime && s.expectedDeliveryTime.endsWith('PM') ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                        >
+                                          PM
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -1535,6 +1890,90 @@ export default function App() {
                   >
                     <Plus size={20} /> اگلی گائے شامل کریں +
                   </button>
+                </div>
+
+                {/* Year Management Card */}
+                <div className="bg-indigo-50 border border-indigo-200 p-6 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-2 text-indigo-900">
+                    <Calendar className="text-indigo-700" size={22} />
+                    <h4 className="font-extrabold text-sm font-sans">سالانہ سیشن اور عید ریکارڈ مینیجر (سال وار انتظام):</h4>
+                  </div>
+                  <p className="text-xs text-indigo-700/80 leading-relaxed font-bold">
+                    یہاں سے ناظمِ مدرسہ (ایڈمن) ہر سال قربانی سوسائٹی کے کُل حسابات کا الگ سالانہ سیشن متعین کر سکتا ہے۔ سال تبدیل کرنے سے سابقہ سال کا تمام ڈیٹا بیک گراؤنڈ میں محفوظ رہے گا اور دوسرے کاؤنٹرز پر بھی منتخب کردہ سال کا نیا از سر نو صاف ڈیٹا خودکار لائیو سنک کے ذریعے لاگو ہو جائے گا۔
+                  </p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Switch Year Selection */}
+                    <div className="space-y-2 bg-white/50 p-4 rounded-2xl border border-indigo-100">
+                      <label className="text-xs text-indigo-950 font-black block">موجودہ فعال سال تبدیل کریں:</label>
+                      <div className="flex gap-2">
+                        <select
+                          value={activeYear}
+                          disabled={activeBranch !== 'nazim'}
+                          onChange={(e) => changeYear(e.target.value)}
+                          className="flex-1 bg-white border border-indigo-200/50 p-2.5 rounded-xl font-bold font-mono text-indigo-950 text-sm focus:ring-1 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        >
+                          {years.map(yr => (
+                            <option key={yr} value={yr}>سالِ قربانی: {yr}</option>
+                          ))}
+                        </select>
+                        <span className="bg-indigo-600 text-white font-extrabold px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-center">
+                          فعال سیشن
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-indigo-500 font-medium">
+                        * ناظم کے اکاؤنٹ سے تبدیل کیا جانے والا سال تمام کاؤنٹرز کے کمپیوٹرز پر لائیو لاگو ہوگا۔
+                      </p>
+                    </div>
+
+                    {/* Add New Year */}
+                    <div className="space-y-2 bg-white/50 p-4 rounded-2xl border border-indigo-100">
+                      <label className="text-xs text-indigo-950 font-black block">نیا سال/سیشن متعین کریں (از سر نو آغاز):</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newYearInput}
+                          disabled={activeBranch !== 'nazim'}
+                          onChange={(e) => setNewYearInput(e.target.value)}
+                          placeholder="مثلاً: 2027 یا 1448"
+                          className="flex-1 bg-white border border-indigo-200/50 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-sm focus:ring-1 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        />
+                        <button
+                          type="button"
+                          disabled={activeBranch !== 'nazim'}
+                          onClick={() => {
+                            const yr = newYearInput.trim();
+                            if (!yr) {
+                              triggerAlert('براہ کرم کوئی سال درج کریں، جیسے 2027 یا 1448 ہجری۔', 'غلطی');
+                              return;
+                            }
+                            if (years.includes(yr)) {
+                              triggerAlert('یہ سال پہلے سے شامل ہے۔ براہ کرم فہرست میں سے منتخب کریں یا نیا سال لکھیں۔', 'اطلاع');
+                              return;
+                            }
+                            triggerConfirm(
+                              `کیا آپ واقعی سال "${yr}" کا اضافہ کر کے اسے ابھی سے لائیو لاگو کرنا چاہتے ہیں؟ اس سے تمام 60 گایوں کے حصے بالکل خالی اور تازہ سالانہ شیٹ کے بابت تیار شروع ہوں گے!`,
+                              () => {
+                                const updatedYears = [...years, yr];
+                                setYears(updatedYears);
+                                localStorage.setItem('qurbani_years_list_v1', JSON.stringify(updatedYears));
+                                changeYear(yr);
+                                setNewYearInput('');
+                                triggerAlert(`کامیابی! سال ${yr} کا لائیو سیشن متعین ہو چکا ہے اور دیگر مفتحہ کاؤنٹربکنگ سیکشنز کو بھی اس کا ریفرنس روانہ کر دیا گیا ہے۔`, 'کامیابی عظمیٰ');
+                              },
+                              'عید سیشن لاگو کریں'
+                            );
+                          }}
+                          className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        >
+                          + نیا سال شروع کریں
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-indigo-500 font-medium">
+                        * نیا عید سال شروع کرنے سے تمام کاؤنٹرز پر مہم بالکل از سر نو شروع ہوگی۔
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Global default Share Amount card */}
@@ -1910,6 +2349,18 @@ export default function App() {
                     <span className="text-slate-400 font-bold">نام حصہ دار:</span>
                     <strong className="text-emerald-700 text-base">{activeSlip.share.name || '---'}</strong>
                   </div>
+                  {activeSlip.share.phone && (
+                    <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-400 font-bold">واٹس ایپ نمبر:</span>
+                      <strong className="text-slate-800 font-mono">{activeSlip.share.phone}</strong>
+                    </div>
+                  )}
+                  {activeSlip.share.address && (
+                    <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-400 font-bold">پتہ تلاش فرماویں:</span>
+                      <strong className="text-slate-800">{activeSlip.share.address}</strong>
+                    </div>
+                  )}
                   <div className="flex justify-between border-b border-slate-100 pb-1.5">
                     <span className="text-slate-400 font-bold">وصول شدہ رقم:</span>
                     <strong className="text-slate-800 text-lg font-mono">{activeSlip.share.amountPaid.toLocaleString('ur-PK')} روپے</strong>
@@ -1930,7 +2381,7 @@ export default function App() {
                 </div>
 
                 {/* Footnotes instruction */}
-                <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl text-center text-[10px] leading-relaxed mt-4">
+                <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl text-center text-[10px] leading-relaxed mt-4 animate-pulse">
                   براہ کرم عید والے دن یہ رسید اپنے ہمراہ لائیں اور وقتِ مقررہ پر تشریف لائیں تاکہ گوشت کا ٹوکرا بآسانی وصول کیا جا سکے۔
                 </div>
 
@@ -1939,35 +2390,70 @@ export default function App() {
                     <span className="block border-t border-slate-200 w-24 text-center mt-3 pt-1">دستخط وصول کنندہ</span>
                   </div>
                   <div className="italic">
-                    اجتماعی قربانی مینیجر پرو
+                    اجتماعی قربانی مینیجر پرو ({activeYear})
                   </div>
                 </div>
               </div>
 
               {/* Action buttons inside slip modal */}
-              <div className="flex gap-3 mt-6">
-                <button 
-                  onClick={() => {
-                    const printable = document.getElementById('printable-area');
-                    if (printable) {
-                      const printContent = printable.innerHTML;
-                      const originalContent = document.body.innerHTML;
-                      document.body.innerHTML = printContent;
-                      window.print();
-                      document.body.innerHTML = originalContent;
-                      window.location.reload(); // simple page restore after system print UI dismiss
-                    }
-                  }}
-                  className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 text-white py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md"
-                >
-                  <Printer size={16} /> رسید پرنٹ کریں
-                </button>
-                <button 
-                  onClick={() => setActiveSlip(null)}
-                  className="flex-1 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm"
-                >
-                  بند کریں
-                </button>
+              <div className="flex flex-col gap-2 mt-6">
+                <div className="flex gap-2 w-full">
+                  <button 
+                    onClick={() => {
+                      const printable = document.getElementById('printable-area');
+                      if (printable) {
+                        const printContent = printable.innerHTML;
+                        const originalContent = document.body.innerHTML;
+                        document.body.innerHTML = printContent;
+                        window.print();
+                        document.body.innerHTML = originalContent;
+                        window.location.reload(); // simple page restore after system print UI dismiss
+                      }
+                    }}
+                    className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 text-white py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95"
+                  >
+                    <Printer size={16} /> رسید پرنٹ کریں
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveSlip(null)}
+                    className="bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-sm transition-all active:scale-95"
+                  >
+                    بند کریں
+                  </button>
+                </div>
+
+                {activeSlip.share.phone && (
+                  <a 
+                    href={(() => {
+                      const msg = `*اجتماعی قربانی سوسائٹی - رسید بکنگ* 🌸\n\n` +
+                                  `*رسید نمبر:* S-${activeSlip.share.id}\n` +
+                                  `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
+                                  `*حصہ مہر:* حصہ ${activeSlip.index}\n` +
+                                  `*نام صاحبِ حصہ:* ${activeSlip.share.name || '---'}\n` +
+                                  `*سال سیشن:* ${activeYear}\n` +
+                                  `*وصول شدہ فنڈ رقم:* ${activeSlip.share.amountPaid.toLocaleString('ur-PK')} روپے\n` +
+                                  `*وصولی اسٹیٹس:* ${activeSlip.share.isPaid ? 'مکمل وصول شدہ ✅' : 'باقی فنڈ غیر ادا شدہ ❌'}\n` +
+                                  `*توقع فراہمی گوشت:* ${activeSlip.share.expectedDeliveryTime || 'عیدِ سعید'}\n\n` +
+                                  `------------------------------------\n` +
+                                  `*ہدایت:* براہِ کرم عید کے روز یہ رسید یا واٹس ایپ میسج دکھا کر مقررہ وقت پر اپنا گوشت کا ٹوکرا وصول فرما لیں۔ جزاک اللہ خیرا!`;
+                      
+                      let cleanNumber = activeSlip.share.phone.replace(/[-\s]/g, '');
+                      if (cleanNumber.startsWith('0')) {
+                        cleanNumber = '92' + cleanNumber.substring(1);
+                      }
+                      return `https://wa.me/${cleanNumber}?text=${encodeURIComponent(msg)}`;
+                    })()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-md transition-all active:scale-95 text-center mt-1"
+                  >
+                    <svg className="w-4 h-4 text-white fill-current shrink-0" viewBox="0 0 24 24">
+                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003  5.324 5.328 0 11.91 0c3.19.001 6.189 1.242 8.444 3.498 2.256 2.256 3.497 5.255 3.497  8.447 0 6.586-5.322 11.91-11.905 11.91-2.002-.001-3.973-.504-5.714-1.46L0 24zm6.59-4.846c1.6.95 3.488 1.451  5.312 1.452 5.385 0 9.766-4.38 9.771-9.768.002-2.61-1.015-5.064-2.864-6.914C17.017 2.073  14.565 1.056 11.956 1.056c-5.388 0-9.773 4.382-9.778  9.771-.001 1.93.498 3.816 1.446 5.485L2.642 21.31l5.005-1.314z"/>
+                    </svg>
+                    <span>واٹس ایپ رسید روانہ کریں (ون کلک)</span>
+                  </a>
+                )}
               </div>
             </motion.div>
           </div>
