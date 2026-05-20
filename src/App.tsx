@@ -1118,7 +1118,7 @@ export default function App() {
             )}
             <div>
               <h2 className="text-lg lg:text-xl font-black text-slate-800 flex items-center gap-2">
-                {view === 'dashboard' ? 'مرکزی ڈیش بورڈ (اجتماعی قربانی)' 
+                {view === 'dashboard' ? 'اجتماعی قربانی مدرسہ قاسم العلوم کورنگی نمبر 6' 
                   : view === 'list' ? 'تمام جانوروں کی فہرست' 
                   : view === 'deposits' ? 'بینک ٹرانسفر / فنڈز مینیجر'
                   : view === 'settings' ? 'جانوروں کا نیا اندراج' 
@@ -1127,7 +1127,7 @@ export default function App() {
                   {branches.find(b => b.id === activeBranch)?.label}
                 </span>
               </h2>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-2.5">
                 {view === 'detail' ? 'حصہ داروں کی تفصیل، رقم کی وصولی اور رسید' : 'مدرسہ اجتماعی انتظامِ فنڈز و قربانی'}
               </p>
             </div>
@@ -2386,10 +2386,13 @@ export default function App() {
                 </div>
 
                 <div className="flex justify-between items-end pt-6 text-[10px] text-slate-400 font-bold">
-                  <div>
-                    <span className="block border-t border-slate-200 w-24 text-center mt-3 pt-1">دستخط وصول کنندہ</span>
+                  <div className="text-center min-w-[124px]">
+                    <span className="block text-slate-950 font-black text-xs mb-1">
+                      {activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر'}
+                    </span>
+                    <span className="block border-t border-slate-200 w-full text-center mt-2 pt-1 font-bold text-slate-500">دستخط وصول کنندہ</span>
                   </div>
-                  <div className="italic">
+                  <div className="italic text-slate-400 font-bold">
                     اجتماعی قربانی مینیجر پرو ({activeYear})
                   </div>
                 </div>
@@ -2426,6 +2429,7 @@ export default function App() {
                 {activeSlip.share.phone && (
                   <a 
                     href={(() => {
+                      const issuingBranchName = activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر';
                       const msg = `*اجتماعی قربانی سوسائٹی - رسید بکنگ* 🌸\n\n` +
                                   `*رسید نمبر:* S-${activeSlip.share.id}\n` +
                                   `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
@@ -2434,9 +2438,10 @@ export default function App() {
                                   `*سال سیشن:* ${activeYear}\n` +
                                   `*وصول شدہ فنڈ رقم:* ${activeSlip.share.amountPaid.toLocaleString('ur-PK')} روپے\n` +
                                   `*وصولی اسٹیٹس:* ${activeSlip.share.isPaid ? 'مکمل وصول شدہ ✅' : 'باقی فنڈ غیر ادا شدہ ❌'}\n` +
+                                  `*جاری کنندہ کاؤنٹر:* ${issuingBranchName}\n` +
                                   `*توقع فراہمی گوشت:* ${activeSlip.share.expectedDeliveryTime || 'عیدِ سعید'}\n\n` +
                                   `------------------------------------\n` +
-                                  `*ہدایت:* براہِ کرم عید کے روز یہ رسید یا واٹس ایپ میسج دکھا کر مقررہ وقت پر اپنا گوشت کا ٹوکرا وصول فرما لیں۔ جزاک اللہ خیرا!`;
+                                  `*هدایت:* براہِ کرم عید کے روز یہ رسید یا واٹس ایپ میسج دکھا کر مقررہ وقت پر اپنا گوشت کا ٹوکرا وصول فرما لیں۔ جزاک اللہ خیرا!`;
                       
                       let cleanNumber = activeSlip.share.phone.replace(/[-\s]/g, '');
                       if (cleanNumber.startsWith('0')) {
