@@ -3,7 +3,7 @@
 
 @theme {
   --font-sans: "Inter", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
-  --font-urdu: "Noto Nastaliq Urdu", "Noto Sans Arabic", serif;
+  --font-urdu: "Mehr Nastaliq Urdu", "Alvi Lahori Nastaliq", "Jameel Noori Nastaliq", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif;
 
   --color-primary: var(--color-emerald-600);
   --color-primary-dark: var(--color-emerald-900);
