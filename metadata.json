@@ -1,0 +1,6 @@
+{
+  "name": "Qurbani Meat Distributor - قربانی گوشت تقسیم",
+  "description": "An Urdu application for calculating and distributing Qurbani meat shares among family, relatives, and those in need.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
