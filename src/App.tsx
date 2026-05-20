@@ -676,7 +676,7 @@ export default function App() {
         }
 
         const issuingBranchName = activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر';
-        const msg = `*اجتماعی قربانی سوسائٹی - رسید بکنگ* 🌸\n\n` +
+        const msg = `*اجتماعی قربانی مدرسہ قاسم العلوم کورنگی 6 - رسید بکنگ* 🌸\n\n` +
                     `*رسید نمبر:* S-${activeSlip.share.id}\n` +
                     `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
                     `*حصہ مہر:* حصہ ${activeSlip.index}\n` +
@@ -2428,7 +2428,7 @@ export default function App() {
               <div id="printable-area" dir="rtl" className="border-4 border-double border-emerald-900/30 p-6 rounded-xl space-y-4 text-right bg-white" style={{ direction: 'rtl', textAlign: 'right' }}>
                 <div className="text-center border-b border-slate-200 pb-3">
                   <Beef className="mx-auto text-emerald-600 mb-1" size={32} />
-                  <h3 className="text-xl font-black text-slate-900">اجتماعی قربانی سوسائٹی</h3>
+                  <h3 className="text-xl font-black text-slate-900">اجتماعی قربانی مدرسہ قاسم العلوم کورنگی 6</h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Qurbani Management Office Receipt</p>
                 </div>
 
