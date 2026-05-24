@@ -32,7 +32,8 @@ import {
   LogIn,
   LogOut,
   Key,
-  Check
+  Check,
+  Move
 } from 'lucide-react';
 
 interface Share {
@@ -47,6 +48,7 @@ interface Share {
   expectedDeliveryTime: string;
   paidByBranchId?: string;
   paidByBranchLabel?: string;
+  customReceiptId?: string;
 }
 
 interface Animal {
@@ -69,7 +71,7 @@ interface ActivityLog {
   id: string;
   timestamp: string;
   branch: string;
-  type: 'payment' | 'distribution' | 'add_animal' | 'remove_animal' | 'deposit';
+  type: 'payment' | 'distribution' | 'add_animal' | 'remove_animal' | 'deposit' | 'transfer';
   details: string;
 }
 
@@ -556,6 +558,8 @@ export default function App() {
   });
   const [selectedTags, setSelectedTags] = useState<boolean[]>([true, true, true, true, true, true, true]);
   const [tagOrientation, setTagOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [transferSource, setTransferSource] = useState<{ animalId: number; shareId: string; shareName: string; shareIndex: number } | null>(null);
+  const [transferTargetAnimalId, setTransferTargetAnimalId] = useState<number | null>(null);
 
   // States for 'Data Record' filters and tables
   const [recordBranchFilter, setRecordBranchFilter] = useState<string>('all');
@@ -567,6 +571,15 @@ export default function App() {
   useEffect(() => {
     setSelectedTags([true, true, true, true, true, true, true]);
   }, [tagAnimalId]);
+
+  // Set default target animal when source is selected for transfer
+  useEffect(() => {
+    if (transferSource) {
+      setTransferTargetAnimalId(transferSource.animalId);
+    } else {
+      setTransferTargetAnimalId(null);
+    }
+  }, [transferSource]);
 
   // Format name in majestic style: جناب [Name] صاحب
   const formatShareholderName = (name: string) => {
@@ -1017,8 +1030,9 @@ export default function App() {
         }
 
         const issuingBranchName = activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر';
+        const receiptNumberString = activeSlip.share.customReceiptId || `S-${activeSlip.share.id}`;
         const msg = `*اجتماعی قربانی مدرسہ قاسم العلوم کورنگی 6 - رسید بکنگ* 🌸\n\n` +
-                    `*رسید نمبر:* S-${activeSlip.share.id}\n` +
+                    `*رسید نمبر:* ${receiptNumberString}\n` +
                     `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
                     `*حصہ مہر:* حصہ ${activeSlip.index}\n` +
                     `*نام صاحبِ حصہ:* ${activeSlip.share.name || '---'}\n` +
@@ -1051,7 +1065,7 @@ export default function App() {
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `Receipt-S-${activeSlip.share.id}.png`;
+          link.download = `Receipt-${receiptNumberString}.png`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -1112,6 +1126,162 @@ export default function App() {
         shares: a.shares.map(s => s.id === shareId ? { ...s, address } : s)
       };
     }));
+  };
+
+  const transferShare = (
+    sourceAnimalId: number,
+    sourceShareId: string,
+    targetAnimalId: number,
+    targetShareIdx: number
+  ) => {
+    const sourceAnimal = animals.find(a => a.id === sourceAnimalId);
+    if (!sourceAnimal) return { success: false, message: 'Source animal not found' };
+
+    const sourceShare = sourceAnimal.shares.find(s => s.id === sourceShareId);
+    if (!sourceShare) return { success: false, message: 'Source share not found' };
+
+    const targetAnimal = animals.find(a => a.id === targetAnimalId);
+    if (!targetAnimal) return { success: false, message: 'Target animal not found' };
+
+    if (targetShareIdx < 0 || targetShareIdx >= SHARES_PER_ANIMAL) {
+      return { success: false, message: 'Invalid target share index' };
+    }
+
+    const targetShare = targetAnimal.shares[targetShareIdx];
+    const targetShareId = targetShare.id;
+
+    if (activeBranch !== 'nazim') {
+      if (sourceShare.isPaid && sourceShare.paidByBranchId && sourceShare.paidByBranchId !== activeBranch) {
+        return { success: false, message: 'یہ حصہ دوسرے کاؤنٹر سے ادا شدہ ہے اور مقفل ہے۔' };
+      }
+      if (targetShare.isPaid && targetShare.paidByBranchId && targetShare.paidByBranchId !== activeBranch) {
+        return { success: false, message: 'منتخب ہدف حصہ دوسرے کاؤنٹر سے ادا شدہ ہے اور مقفل ہے۔' };
+      }
+    }
+
+    const originalReceiptId = sourceShare.customReceiptId || `S-${sourceShare.id}`;
+
+    setAnimals(prev => prev.map(a => {
+      // Same Animal
+      if (sourceAnimalId === targetAnimalId) {
+        if (a.id !== sourceAnimalId) return a;
+        
+        const newShares = [...a.shares];
+        const oldTargetDetails = { ...newShares[targetShareIdx] };
+        
+        newShares[targetShareIdx] = {
+          ...newShares[targetShareIdx],
+          name: sourceShare.name,
+          phone: sourceShare.phone,
+          address: sourceShare.address,
+          isDistributed: sourceShare.isDistributed,
+          distributionTime: sourceShare.distributionTime,
+          isPaid: sourceShare.isPaid,
+          amountPaid: sourceShare.amountPaid,
+          expectedDeliveryTime: sourceShare.expectedDeliveryTime,
+          paidByBranchId: sourceShare.paidByBranchId,
+          paidByBranchLabel: sourceShare.paidByBranchLabel,
+          customReceiptId: originalReceiptId
+        };
+
+        if (oldTargetDetails.name) {
+          const srcIndex = a.shares.findIndex(s => s.id === sourceShareId);
+          newShares[srcIndex] = {
+            ...sourceShare,
+            name: oldTargetDetails.name,
+            phone: oldTargetDetails.phone,
+            address: oldTargetDetails.address,
+            isDistributed: oldTargetDetails.isDistributed,
+            distributionTime: oldTargetDetails.distributionTime,
+            isPaid: oldTargetDetails.isPaid,
+            amountPaid: oldTargetDetails.amountPaid,
+            expectedDeliveryTime: oldTargetDetails.expectedDeliveryTime,
+            paidByBranchId: oldTargetDetails.paidByBranchId,
+            paidByBranchLabel: oldTargetDetails.paidByBranchLabel,
+            customReceiptId: oldTargetDetails.customReceiptId || `S-${oldTargetDetails.id}`
+          };
+        } else {
+          const srcIndex = a.shares.findIndex(s => s.id === sourceShareId);
+          newShares[srcIndex] = {
+            id: sourceShareId,
+            name: '',
+            phone: '',
+            address: '',
+            isDistributed: false,
+            isPaid: false,
+            amountPaid: 0,
+            expectedDeliveryTime: '01:00 PM'
+          };
+        }
+
+        return { ...a, shares: newShares };
+      }
+
+      // Different Animals
+      if (a.id === sourceAnimalId) {
+        const oldTarget = targetAnimal.shares[targetShareIdx];
+        if (oldTarget.name) {
+          return {
+            ...a,
+            shares: a.shares.map(s => s.id === sourceShareId ? {
+              ...s,
+              name: oldTarget.name,
+              phone: oldTarget.phone,
+              address: oldTarget.address,
+              isDistributed: oldTarget.isDistributed,
+              distributionTime: oldTarget.distributionTime,
+              isPaid: oldTarget.isPaid,
+              amountPaid: oldTarget.amountPaid,
+              expectedDeliveryTime: oldTarget.expectedDeliveryTime,
+              paidByBranchId: oldTarget.paidByBranchId,
+              paidByBranchLabel: oldTarget.paidByBranchLabel,
+              customReceiptId: oldTarget.customReceiptId || `S-${oldTarget.id}`
+            } : s)
+          };
+        } else {
+          return {
+            ...a,
+            shares: a.shares.map(s => s.id === sourceShareId ? {
+              id: sourceShareId,
+              name: '',
+              phone: '',
+              address: '',
+              isDistributed: false,
+              isPaid: false,
+              amountPaid: 0,
+              expectedDeliveryTime: '01:00 PM'
+            } : s)
+          };
+        }
+      }
+
+      if (a.id === targetAnimalId) {
+        return {
+          ...a,
+          shares: a.shares.map(s => s.id === targetShareId ? {
+            ...s,
+            name: sourceShare.name,
+            phone: sourceShare.phone,
+            address: sourceShare.address,
+            isDistributed: sourceShare.isDistributed,
+            distributionTime: sourceShare.distributionTime,
+            isPaid: sourceShare.isPaid,
+            amountPaid: sourceShare.amountPaid,
+            expectedDeliveryTime: sourceShare.expectedDeliveryTime,
+            paidByBranchId: sourceShare.paidByBranchId,
+            paidByBranchLabel: sourceShare.paidByBranchLabel,
+            customReceiptId: originalReceiptId
+          } : s)
+        };
+      }
+
+      return a;
+    }));
+
+    const details = `${sourceAnimal.label} کے حصہ ${sourceShare.name || 'خالی'} کو ${targetAnimal.label} کے حصہ نمبر ${targetShareIdx + 1} پر منتقل کر دیا گیا`;
+    logActivity('transfer', details);
+
+    return { success: true, message: 'کامیابی سے منتقل کر دیا گیا' };
   };
 
   const togglePayment = (animalId: number, shareId: string) => {
@@ -2372,6 +2542,17 @@ export default function App() {
                                 رسید جاری کریں 
                               </button>
 
+                              {/* Transfer / Replace Share */}
+                              {s.name && (
+                                <button
+                                  onClick={() => setTransferSource({ animalId: selectedAnimal.id, shareId: s.id, shareName: s.name, shareIndex: idx })}
+                                  className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-indigo-100 hover:text-indigo-800 transition-all active:scale-95 flex-1 md:flex-initial shadow-sm"
+                                >
+                                  <Move size={14} className="text-indigo-500 shrink-0" />
+                                  حصہ ری پلیس/منتقل کریں
+                                </button>
+                              )}
+
                               {/* Toggle distributed meat status */}
                               <button 
                                 onClick={() => toggleDistribution(selectedAnimal.id, s.id)}
@@ -3188,7 +3369,7 @@ export default function App() {
                             <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
                             <td className="p-3 text-slate-900">{item.share.name || '____________'}</td>
                             <td className="p-3 text-center text-slate-400">—</td>
-                            <td className="p-3 text-center font-mono text-emerald-800">S-{item.share.id}</td>
+                            <td className="p-3 text-center font-mono text-emerald-800">{item.share.customReceiptId || `S-${item.share.id}`}</td>
                             <td className="p-3 text-center font-mono">1</td>
                             <td className="p-3 text-slate-500 max-w-xs truncate">{item.share.address || '____________'}</td>
                             <td className="p-3 text-center font-mono text-slate-600 dir-ltr">{item.share.phone || '____________'}</td>
@@ -3240,7 +3421,7 @@ export default function App() {
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}>{idx + 1}</td>
                           <td className="text-right-important" style={{ border: '1px solid #111111', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{item.share.name || '____________'}</td>
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}></td> {/* Book Number - Empty */}
-                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>S-{item.share.id}</td>
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{item.share.customReceiptId || `S-${item.share.id}`}</td>
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}>1</td>
                           <td className="text-right-important" style={{ border: '1px solid #111111', padding: '6px', textAlign: 'right' }}>{item.share.address || '____________'}</td>
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center', direction: 'ltr', unicodeBidi: 'embed' }}>{item.share.phone || '____________'}</td>
@@ -3273,7 +3454,7 @@ export default function App() {
                 </div>
 
                 <div className="flex justify-between items-center text-xs text-slate-500 font-bold" dir="rtl" style={{ direction: 'rtl' }}>
-                  <span>رسید نمبر: S-{activeSlip.share.id}</span>
+                  <span>رسید نمبر: {activeSlip.share.customReceiptId || `S-${activeSlip.share.id}`}</span>
                   <span>تاریخ: {new Date().toLocaleDateString('ur-PK') || '2026'}</span>
                 </div>
 
@@ -3555,6 +3736,126 @@ export default function App() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Dynamic Share Transfer / Swap Modal Overlay */}
+        {transferSource && transferTargetAnimalId && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto" dir="rtl">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 relative flex flex-col space-y-5 border border-slate-100"
+            >
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-3 justify-start">
+                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                  <Move size={20} />
+                </div>
+                <div>
+                  <h4 className="text-lg font-black text-slate-900">حصہ تبدیل کریں یا منتقل کریں</h4>
+                  <p className="text-xs text-slate-400 font-bold">بکنگ منتقل کرنے کا آسان نظام</p>
+                </div>
+              </div>
+
+              {/* Source Info Panel */}
+              <div className="bg-indigo-50/50 border border-indigo-100/60 rounded-2xl p-4 space-y-2">
+                <span className="text-[10px] uppercase font-black tracking-wider text-indigo-600 block">منتقل ہونے والا بکنگ کھاتہ:</span>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <strong className="text-base text-indigo-900">{transferSource.shareName}</strong>
+                    <div className="text-xs text-indigo-700/80 font-bold mt-0.5">
+                      {animals.find(a => a.id === transferSource.animalId)?.label} — حصہ نمبر {transferSource.shareIndex + 1}
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold bg-indigo-100 text-indigo-800 px-3 py-1 rounded-lg">
+                    {animals.find(a => a.id === transferSource.animalId)?.shares[transferSource.shareIndex].customReceiptId || `S-${transferSource.shareId}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Target Selector Dropdown */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-slate-600 block">ہدف گائے (جانور) منتخب کریں:</label>
+                <select
+                  value={transferTargetAnimalId}
+                  onChange={(e) => setTransferTargetAnimalId(Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl text-xs font-extrabold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {animals.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.label} ({a.shares.filter(s => s.name).length} / 7 حصے پر)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Target Slots List */}
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-600 block">منتخب گائے میں ہدف حصہ منتخب کریں:</label>
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50">
+                  {animals.find(a => a.id === transferTargetAnimalId)?.shares.map((tShare, tIdx) => {
+                    const isSelf = transferSource.animalId === transferTargetAnimalId && transferSource.shareIndex === tIdx;
+                    return (
+                      <div 
+                        key={tShare.id} 
+                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all text-right ${
+                          isSelf 
+                            ? 'bg-slate-100 border-slate-200 opacity-60' 
+                            : tShare.name 
+                              ? 'bg-amber-50/50 border-amber-100 hover:border-amber-300' 
+                              : 'bg-white border-slate-200 hover:border-emerald-300'
+                        }`}
+                      >
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-slate-700 block">حصہ نمبر {tIdx + 1}</span>
+                          <span className={`text-[11px] font-black ${tShare.name ? 'text-amber-800' : 'text-emerald-700'}`}>
+                            {isSelf 
+                              ? '(یہ خود یہی حصہ ہے)' 
+                              : tShare.name 
+                                ? `صاحبِ حصہ: ${tShare.name} (آپس میں تبدیل ہو جائے گا)`
+                                : '(خالی حصہ — مکمل منتقلی)'}
+                          </span>
+                        </div>
+
+                        {!isSelf && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const res = transferShare(transferSource.animalId, transferSource.shareId, transferTargetAnimalId, tIdx);
+                              if (res.success) {
+                                setTransferSource(null);
+                                triggerAlert(res.message, 'منتقلی مکمل');
+                              } else {
+                                triggerAlert(res.message, 'روکاوٹ');
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold shadow-sm transition-all text-white active:scale-95 cursor-pointer ${
+                              tShare.name 
+                                ? 'bg-amber-600 hover:bg-amber-700' 
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                            }`}
+                          >
+                            {tShare.name ? 'تبدیل (Swap) کریں' : 'یہاں لائیں'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setTransferSource(null)}
+                  className="flex-1 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-750 font-bold py-2.5 rounded-xl text-xs transition-all active:scale-95"
+                >
+                  منسوخ کریں
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
