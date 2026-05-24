@@ -31,7 +31,8 @@ import {
   Calendar,
   LogIn,
   LogOut,
-  Key
+  Key,
+  Check
 } from 'lucide-react';
 
 interface Share {
@@ -93,7 +94,9 @@ const DEFAULT_BRANCHES: Branch[] = [
 ];
 
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits' | 'tags' | 'records'>(() => {
+    return (sessionStorage.getItem('qurbani_active_view') as any) || 'dashboard';
+  });
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -388,6 +391,9 @@ export default function App() {
       }));
     }
     setAnimals(loadedAnimals);
+    if (loadedAnimals.length > 0) {
+      setTagAnimalId(loadedAnimals[0].id);
+    }
 
     // Load new year deposits
     const savedDeps = localStorage.getItem(`qurbani_deposits_v4_${newYear}`);
@@ -485,6 +491,10 @@ export default function App() {
     localStorage.setItem('qurbani_active_branch_v4', activeBranch);
   }, [activeBranch]);
 
+  useEffect(() => {
+    sessionStorage.setItem('qurbani_active_view', view);
+  }, [view]);
+
   // Listen for broadcast sync across windows / tabs
   useEffect(() => {
     try {
@@ -539,6 +549,337 @@ export default function App() {
       setCustomAnimalLabelInput(`گائے نمبر ${customAnimalIdInput || suggestedNextId}`);
     }
   }, [suggestedNextId]);
+
+  // States for 'Tag Print' and 'Data Record' features
+  const [tagAnimalId, setTagAnimalId] = useState<number | null>(() => {
+    return animals.length > 0 ? animals[0].id : null;
+  });
+  const [selectedTags, setSelectedTags] = useState<boolean[]>([true, true, true, true, true, true, true]);
+  const [tagOrientation, setTagOrientation] = useState<'portrait' | 'landscape'>('portrait');
+
+  // States for 'Data Record' filters and tables
+  const [recordBranchFilter, setRecordBranchFilter] = useState<string>('all');
+  const [recordAnimalFilter, setRecordAnimalFilter] = useState<string>('all');
+  const [recordPaymentFilter, setRecordPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [recordSearchQuery, setRecordSearchQuery] = useState<string>('');
+
+  // Auto reset selected shares to all true when animal selection changes
+  useEffect(() => {
+    setSelectedTags([true, true, true, true, true, true, true]);
+  }, [tagAnimalId]);
+
+  // Format name in majestic style: جناب [Name] صاحب
+  const formatShareholderName = (name: string) => {
+    if (!name || name.trim() === '') return '_______________';
+    let cleanName = name.trim();
+    if (cleanName.startsWith('جناب')) {
+      cleanName = cleanName.replace(/^جناب\s+/, '');
+    }
+    if (cleanName.endsWith('صاحب')) {
+      cleanName = cleanName.replace(/\s+صاحب$/, '');
+    }
+    return `جناب ${cleanName} صاحب`;
+  };
+
+  // Parse name to extract "معرفت" or "بمعرفت" to a separate line
+  const parseShareholderName = (name: string) => {
+    if (!name || name.trim() === '') return { main: '_______________', sub: '' };
+    const rawName = name.trim();
+    const marefatMatch = rawName.match(/\s*(بمعرفت|معرفت)\s*(.*)$/);
+    
+    let mainPart = rawName;
+    let subPart = '';
+    
+    if (marefatMatch) {
+      mainPart = rawName.substring(0, marefatMatch.index).trim();
+      subPart = marefatMatch[0].trim();
+    }
+    
+    if (mainPart.startsWith('جناب')) {
+      mainPart = mainPart.replace(/^جناب\s+/, '');
+    }
+    if (mainPart.endsWith('صاحب')) {
+      mainPart = mainPart.replace(/\s+صاحب$/, '');
+    }
+    
+    const formattedMain = mainPart === '' ? '_______________' : `جناب ${mainPart} صاحب`;
+    return { main: formattedMain, sub: subPart };
+  };
+
+  // Chunking helper to divide array into chunks of a given size
+  const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+    const result: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      result.push(arr.slice(i, i + size));
+    }
+    return result;
+  };
+
+  // Covert printing helper to print beautifully without any sandboxed iframe limitations
+  const printElementDirectly = (elementId: string, styleContent: string) => {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    const origBodyDir = document.body.getAttribute('dir');
+    const origBodyClass = document.body.className;
+    
+    // Ensure the element is visible by copying and adjusting classes
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.style.display = 'block';
+    clone.className = clone.className.replace(/\bhidden\b/g, '');
+    
+    const styleBlock = `
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400..700&family=Noto+Sans+Arabic:wght@100..900&family=Inter:wght@100..900&display=swap');
+        ${styleContent}
+      </style>
+    `;
+
+    const printFrameContent = `
+      <div dir="rtl" class="urdu-text" style="direction: rtl; text-align: right; width: 100%; min-height: 100%; background: white;">
+        ${clone.outerHTML}
+        ${styleBlock}
+      </div>
+    `;
+
+    const originalContent = document.body.innerHTML;
+    document.body.innerHTML = printFrameContent;
+    document.body.setAttribute('dir', 'rtl');
+    document.body.className = "urdu-text bg-white";
+    
+    setTimeout(() => {
+      window.print();
+      
+      document.body.innerHTML = originalContent;
+      if (origBodyDir) {
+        document.body.setAttribute('dir', origBodyDir);
+      } else {
+        document.body.removeAttribute('dir');
+      }
+      document.body.className = origBodyClass;
+      
+      window.location.reload();
+    }, 50);
+  };
+
+  // Trigger tag printing with highly optimized black ink contrast styles and Alvi Nastaleeq fonts
+  const handlePrintTags = () => {
+    const isLandscape = tagOrientation === 'landscape';
+    const styleContent = `
+      @media print {
+        @page {
+          size: A4 ${isLandscape ? 'landscape' : 'portrait'};
+          margin: 0.15in !important;
+        }
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background-color: #ffffff !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .a4-page {
+          width: ${isLandscape ? '11.69in' : '8.27in'} !important;
+          height: ${isLandscape ? '8.27in' : '11.69in'} !important;
+          padding: ${isLandscape ? '0.25in 0.3in' : '0.3in 0.25in'} !important;
+          box-sizing: border-box !important;
+          page-break-after: always !important;
+          break-after: page !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: flex-start !important;
+          background: white !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .tags-grid {
+          display: grid !important;
+          grid-template-columns: repeat(2, ${isLandscape ? '4.0in' : '3.8in'}) !important;
+          grid-template-rows: repeat(2, ${isLandscape ? '3.8in' : '4.0in'}) !important;
+          gap: 0.15in !important;
+          justify-content: center !important;
+          align-content: start !important;
+        }
+        .tag-card {
+          width: ${isLandscape ? '4.0in' : '3.8in'} !important;
+          min-width: ${isLandscape ? '4.0in' : '3.8in'} !important;
+          max-width: ${isLandscape ? '4.0in' : '3.8in'} !important;
+          height: ${isLandscape ? '3.8in' : '4.0in'} !important;
+          min-height: ${isLandscape ? '3.8in' : '4.0in'} !important;
+          max-height: ${isLandscape ? '3.8in' : '4.0in'} !important;
+          border: 4px solid #000000 !important;
+          box-sizing: border-box !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: space-between !important;
+          padding: 14px !important;
+          direction: rtl !important;
+          text-align: right !important;
+          background-color: #ffffff !important;
+          position: relative !important;
+          overflow: hidden !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .tag-card * {
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .tag-section-top {
+          height: 40% !important;
+          border-bottom: 2px solid #000000 !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: space-around !important;
+          padding-bottom: 6px !important;
+        }
+        .tag-section-middle {
+          height: 20% !important;
+          border-bottom: 2px solid #000000 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: space-between !important;
+          direction: rtl !important;
+        }
+        .tag-section-bottom {
+          height: 40% !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          text-align: center !important;
+          padding-top: 8px !important;
+        }
+        .tag-row {
+          display: flex !important;
+          justify-content: space-between !important;
+          align-items: center !important;
+          width: 100% !important;
+          direction: rtl !important;
+        }
+      }
+    `;
+    printElementDirectly('tags-print-container', styleContent);
+  };
+
+  // Trigger ledger list print with beautiful double line border and optimized columns
+  const handlePrintRecords = () => {
+    const styleContent = `
+      @media print {
+        @page {
+          size: A4 portrait;
+          margin: 0.4in 0.3in !important;
+        }
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background-color: #ffffff !important;
+          color: #000000 !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .print-header {
+          text-align: center !important;
+          margin-bottom: 24px !important;
+          border-bottom: 3px double #000000 !important;
+          padding-bottom: 12px !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .print-title {
+          font-size: 20px !important;
+          font-weight: bold !important;
+          margin: 0 0 4px 0 !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .print-subtitle {
+          font-size: 11px !important;
+          color: #333333 !important;
+          margin: 0 !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .report-table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          direction: rtl !important;
+          text-align: right !important;
+          font-size: 11px !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .report-table th, .report-table td {
+          border: 1px solid #111111 !important;
+          padding: 8px 6px !important;
+          font-family: "Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+        }
+        .report-table th {
+          background-color: #f3f4f6 !important;
+          font-weight: bold !important;
+          text-align: center !important;
+        }
+        .report-table td {
+          text-align: center !important;
+        }
+        .text-right-important {
+          text-align: right !important;
+        }
+      }
+    `;
+    printElementDirectly('records-print-container', styleContent);
+  };
+
+  // Code generator for single Tag Card Item on screen preview
+  const renderTagItemCode = (
+    animalLabel: string,
+    shareIdx: number,
+    shareName: string,
+    sharePhone: string,
+    isScreenPreview: boolean
+  ) => {
+    const getAnimalNumberOnly = (label: string) => {
+      const digits = label.replace(/[^\d]/g, '');
+      return digits || label;
+    };
+    
+    const cowNumber = getAnimalNumberOnly(animalLabel);
+    const nameParts = parseShareholderName(shareName);
+    
+    const cardClass = isScreenPreview 
+      ? `${tagOrientation === 'landscape' ? 'w-[190px] h-[180px]' : 'w-[180px] h-[190px]'} border-4 border-slate-950 flex flex-col justify-between p-2 select-none bg-white text-right`
+      : "tag-card";
+      
+    return (
+      <div className={cardClass} dir="rtl" style={{ direction: 'rtl', textAlign: 'right', fontFamily: '"Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", sans-serif' }}>
+        <div className={isScreenPreview ? "border-b-2 border-slate-950 pb-1 flex flex-col justify-center h-[75px]" : "tag-section-top"}>
+          <div className="flex justify-between items-center w-full" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className={`${isScreenPreview ? 'text-[10px]' : 'text-xl'} font-bold text-slate-800`}>گائے نمبر</span>
+            <div className={isScreenPreview ? "w-6 h-6 flex items-center justify-center" : "w-12 h-12 flex items-center justify-center"} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <span className={`${isScreenPreview ? 'text-xl' : 'text-[45px]'} font-black text-slate-950 font-mono tracking-tight`} style={{ fontFamily: '"Inter", sans-serif', lineHeight: '1' }}>{cowNumber}</span>
+            </div>
+          </div>
+          <div className="flex justify-between items-center w-full mt-0.5" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className={`${isScreenPreview ? 'text-[10px]' : 'text-xl'} font-bold text-slate-800`}>حصہ نمبر</span>
+            <div className={`${isScreenPreview ? 'w-6 h-6 text-xs' : 'w-12 h-12 text-2xl'} border-2 border-slate-950 rounded-full flex items-center justify-center font-black text-slate-950`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Inter", sans-serif', lineHeight: '1', boxSizing: 'border-box' }}>
+              {shareIdx}
+            </div>
+          </div>
+        </div>
+        
+        <div className={isScreenPreview ? "border-b-2 border-slate-950 py-1 flex justify-between items-center h-[30px]" : "tag-section-middle"}>
+          <span className={`${isScreenPreview ? 'text-[8px]' : 'text-lg'} font-bold text-slate-700`}>رابطہ نمبر</span>
+          <span className={`${isScreenPreview ? 'text-[10px]' : 'text-xl'} font-black text-slate-950 font-mono tracking-wider`} style={{ fontFamily: '"Inter", sans-serif' }}>
+            {sharePhone || '_______________'}
+          </span>
+        </div>
+        
+        <div className={isScreenPreview ? "flex items-center justify-center text-center py-1 h-[55px]" : "tag-section-bottom"}>
+          <div className="w-full text-center flex flex-col justify-center items-center">
+            <p className={`${isScreenPreview ? 'text-[9px] leading-snug' : 'text-[22px] font-black'} text-slate-950`} style={{ lineHeight: isScreenPreview ? '1.3' : '1.8', margin: 0, wordBreak: 'break-word', fontFamily: '"Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", sans-serif' }}>
+              {nameParts.main}
+            </p>
+            {nameParts.sub && (
+              <p className={`${isScreenPreview ? 'text-[8px] mt-0.5 leading-snug' : 'text-[17px] font-bold mt-1'} text-slate-700`} style={{ lineHeight: isScreenPreview ? '1.3' : '1.6', margin: 0, wordBreak: 'break-word', fontFamily: '"Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", sans-serif' }}>
+                {nameParts.sub}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // General operations
   const addAnimal = () => {
@@ -1027,6 +1368,77 @@ export default function App() {
 
   const selectedAnimal = animals.find(a => a.id === selectedAnimalId);
 
+  // Selector to filter and paginate/chunk selected animal shares for Tag Printing
+  const chunkedSelectedTags = useMemo(() => {
+    const selectedAnimalForTags = animals.find(a => a.id === tagAnimalId);
+    if (!selectedAnimalForTags) return [];
+    
+    const list: { cowNumber: string; shareIdx: number; shareName: string; sharePhone: string; formattedName: string }[] = [];
+    
+    selectedTags.forEach((isSelected, idx) => {
+      if (isSelected) {
+        const share = selectedAnimalForTags.shares[idx];
+        const shareIdx = idx + 1;
+        const getAnimalNumberOnly = (label: string) => {
+          const digits = label.replace(/[^\d]/g, '');
+          return digits || label;
+        };
+        const cowNumber = getAnimalNumberOnly(selectedAnimalForTags.label);
+        const formattedName = formatShareholderName(share?.name || '');
+        list.push({
+          cowNumber,
+          shareIdx,
+          shareName: share?.name || '',
+          sharePhone: share?.phone || '',
+          formattedName
+        });
+      }
+    });
+    
+    return chunkArray(list, 4);
+  }, [tagAnimalId, selectedTags, animals]);
+
+  // Selector to filter flat list of bookings for Data Record spreadsheet
+  const filteredSharesForRecords = useMemo(() => {
+    const list: { animalId: number; animalLabel: string; share: Share; shareIdx: number }[] = [];
+    animals.forEach(animal => {
+      animal.shares.forEach((share, idx) => {
+        // filter by branch
+        if (recordBranchFilter !== 'all') {
+          if (share.paidByBranchId !== recordBranchFilter) return;
+        }
+        // filter by animal
+        if (recordAnimalFilter !== 'all') {
+          if (animal.id.toString() !== recordAnimalFilter) return;
+        }
+        // filter by payment
+        if (recordPaymentFilter === 'paid') {
+          if (!share.isPaid) return;
+        } else if (recordPaymentFilter === 'unpaid') {
+          if (share.isPaid) return;
+        }
+        // search query
+        if (recordSearchQuery.trim() !== '') {
+          const query = recordSearchQuery.toLowerCase();
+          const nameMatch = share.name ? share.name.toLowerCase().includes(query) : false;
+          const phoneMatch = share.phone ? share.phone.toLowerCase().includes(query) : false;
+          const addrMatch = share.address ? share.address.toLowerCase().includes(query) : false;
+          const labelMatch = animal.label ? animal.label.toLowerCase().includes(query) : false;
+          
+          if (!nameMatch && !phoneMatch && !addrMatch && !labelMatch) return;
+        }
+        
+        list.push({
+          animalId: animal.id,
+          animalLabel: animal.label,
+          share,
+          shareIdx: idx + 1
+        });
+      });
+    });
+    return list;
+  }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery]);
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const branchToAuth = branches.find(b => b.id === pendingActiveBranch);
@@ -1196,6 +1608,22 @@ export default function App() {
             <Settings size={22} />
             <span className="hidden lg:block text-sm">گائے کا اندراج</span>
           </button>
+
+          <button 
+            onClick={() => setView('tags')}
+            className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'tags' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+          >
+            <Printer size={22} />
+            <span className="hidden lg:block text-sm">ٹیگ پرنٹ</span>
+          </button>
+
+          <button 
+            onClick={() => setView('records')}
+            className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'records' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+          >
+            <Database size={22} />
+            <span className="hidden lg:block text-sm">ڈیٹا ریکارڈ</span>
+          </button>
         </nav>
 
         <div className="p-6 border-t border-emerald-900/40 text-[10px] text-emerald-500/50 text-center hidden lg:block uppercase font-bold">
@@ -1209,7 +1637,7 @@ export default function App() {
         {/* Header */}
         <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-4">
-            {(view === 'detail' || view === 'settings' || view === 'deposits') && (
+            {(view === 'detail' || view === 'settings' || view === 'deposits' || view === 'tags' || view === 'records') && (
               <button 
                 onClick={() => setView(view === 'detail' ? 'list' : 'dashboard')}
                 className="w-10 h-10 rounded-full hover:bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 transition-all font-bold shrink-0"
@@ -1223,6 +1651,8 @@ export default function App() {
                   : view === 'list' ? 'تمام جانوروں کی فہرست' 
                   : view === 'deposits' ? 'بینک ٹرانسفر / فنڈز مینیجر'
                   : view === 'settings' ? 'جانوروں کا نیا اندراج' 
+                  : view === 'tags' ? 'قربانی جانوروں کے ٹیگ پرنٹ'
+                  : view === 'records' ? 'کھاتہ داران ڈیٹا ریکارڈ لسٹ'
                   : selectedAnimal?.label}
                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
                   {branches.find(b => b.id === activeBranch)?.label}
@@ -1421,7 +1851,9 @@ export default function App() {
                           <tfoot>
                             <tr className="border-t-2 border-slate-950">
                               <td className="pt-2 font-black text-slate-900 text-xs">گرانڈ ٹوٹل:</td>
-                              <td className="pt-2 text-center font-black font-mono text-slate-800 text-xs">{grandTotalCount} / {animals.length * SHARES_PER_ANIMAL}</td>
+                              <td className="pt-2 text-center font-black font-mono text-slate-800 text-xs">
+                                <span dir="ltr" className="inline-block">{grandTotalCount} / {animals.length * SHARES_PER_ANIMAL}</span>
+                              </td>
                               <td className="pt-2 text-left font-black font-mono text-emerald-900 text-xs sm:text-sm">
                                 {grandTotalAmount.toLocaleString('ur-PK')}{' '}
                                 <span className="text-[9px] font-extrabold text-slate-650">روپے</span>
@@ -2408,6 +2840,414 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'tags' && (
+              <motion.div
+                key="tags-view"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6"
+              >
+                {/* Control Panel Card */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="space-y-2 flex-1">
+                    <h3 className="text-lg font-black text-slate-800">قربانی گائے کے ٹرانزٹ ٹیگ پرنٹ کریں</h3>
+                    <p className="text-xs text-slate-500 font-medium">ٹیگ کارڈ کا چوڑائی 3.8 انچ اور اونچائی 4.0 انچ (پورٹریٹ) یا چوڑائی 4.0 انچ اور اونچائی 3.8 انچ (لینڈ اسکیپ) منتخب کیا جا سکتا ہے۔ دونوں صورتوں میں یہ اے فور (A4) پیج پر 4 کی تعداد میں پرنٹ ہوں گے۔</p>
+                    
+                    <div className="flex flex-wrap items-center gap-4 pt-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-600">گائے منتخب کریں:</span>
+                        <select
+                          value={tagAnimalId || ''}
+                          onChange={(e) => {
+                            const val = e.target.value ? parseInt(e.target.value) : null;
+                            setTagAnimalId(val);
+                          }}
+                          className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold font-sans text-slate-800 outline-none focus:ring-1 focus:ring-emerald-500"
+                        >
+                          <option value="">منتخب کریں...</option>
+                          {animals.map(a => (
+                            <option key={a.id} value={a.id}>{a.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2 border-r border-slate-200 pr-4 mr-2">
+                        <span className="text-xs font-bold text-slate-600">ٹیگ کا رخ اور سائز:</span>
+                        <select
+                          value={tagOrientation}
+                          onChange={(e) => setTagOrientation(e.target.value as 'portrait' | 'landscape')}
+                          className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-emerald-500"
+                        >
+                          <option value="portrait">پورٹریٹ (Portrait 3.8 x 4.0 in)</option>
+                          <option value="landscape">لینڈ اسکیپ (Landscape 4.0 x 3.8 in)</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedTags([true, true, true, true, true, true, true])}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition-all"
+                        >
+                          تمام منتخب کریں
+                        </button>
+                        <button
+                          onClick={() => setSelectedTags([false, false, false, false, false, false, false])}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition-all"
+                        >
+                          سب صاف کریں
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setView('dashboard')}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-2xl transition-all"
+                    >
+                      ڈیش بورڈ پر جائیں
+                    </button>
+                    <button
+                      onClick={handlePrintTags}
+                      disabled={chunkedSelectedTags.length === 0}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-2xl transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/10"
+                    >
+                      <Printer size={16} /> ٹیگ پرنٹ نکالیں
+                    </button>
+                  </div>
+                </div>
+
+                {/* Main section: Left-side selectors and Right-side live beautiful layout preview */}
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                  
+                  {/* Select individual shares list (4 columns on desktop) */}
+                  <div className="xl:col-span-4 bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
+                    <h4 className="text-xs font-bold text-slate-500 border-b border-slate-100 pb-2 flex justify-between items-center">
+                      <span>حصہ دار لسٹ (انفرادی انتخاب)</span>
+                      <span className="bg-emerald-50 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-sans">کُل منتخب: {selectedTags.filter(Boolean).length}</span>
+                    </h4>
+
+                    {tagAnimalId && animals.find(a => a.id === tagAnimalId) ? (
+                      <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                        {animals.find(a => a.id === tagAnimalId)!.shares.map((share, idx) => (
+                          <div 
+                            key={share.id}
+                            onClick={() => {
+                              setSelectedTags(prev => {
+                                const next = [...prev];
+                                next[idx] = !next[idx];
+                                return next;
+                              });
+                            }}
+                            className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${selectedTags[idx] ? 'bg-emerald-50/60 border-emerald-500' : 'bg-slate-50/40 border-slate-200/80 hover:border-slate-300'}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${selectedTags[idx] ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white border-slate-300'}`}>
+                                {selectedTags[idx] && <Check size={14} className="stroke-[3]" />}
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs font-extrabold text-slate-850">{share.name || 'خالی حصہ'}</p>
+                                <p className="text-[10px] text-slate-400 font-bold font-sans">حصہ نمبر {idx + 1} {share.phone ? `• ${share.phone}` : ''}</p>
+                              </div>
+                            </div>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${share.isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {share.isPaid ? 'ادائیگی شدہ' : 'بقایا'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 text-center py-6">کوئی گائے منتخب نہیں کی گئی ہے یا فہرست خالی ہے۔</p>
+                    )}
+                  </div>
+
+                  {/* Print preview structure (8 columns on desktop) */}
+                  <div className="xl:col-span-8 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-bold text-slate-500">مطلوبہ اے فور (A4) پرنٹ پیج کا حقیقی لائیو پری ویو:</h4>
+                      <span className="text-[10px] text-slate-400 font-extrabold">کُل صفحات: {chunkedSelectedTags.length} صفحہ</span>
+                    </div>
+
+                    <div className="bg-slate-100 flex flex-col items-center gap-8 p-6 shadow-inner rounded-3xl overflow-y-auto max-h-[600px] border border-slate-200/80">
+                      {chunkedSelectedTags.map((chunk, chunkIdx) => {
+                        const isLandscapeStatus = tagOrientation === 'landscape';
+                        return (
+                          <div key={chunkIdx} className={`${isLandscapeStatus ? 'w-[600px] min-h-[424px]' : 'w-[450px] min-h-[636px]'} bg-white border border-slate-300 shadow-xl p-6 relative flex flex-col justify-start overflow-hidden rounded-md animate-fade-in shrink-0`}>
+                            
+                            {/* Cutting Indicator Dashed Line Overlays */}
+                            <div className="absolute top-1/2 left-0 right-0 border-t border-dashed border-red-300/60 z-10 pointer-events-none" />
+                            <div className="absolute left-1/2 top-0 bottom-0 border-l border-dashed border-red-300/60 z-10 pointer-events-none" />
+                          
+                          {/* Small helper tags */}
+                          <span className="absolute top-1 right-2 text-[8px] text-[red]/50 font-sans tracking-widest uppercase select-none">صفحہ #{chunkIdx + 1} کٹنگ لائنز قینچی</span>
+
+                          <div className="grid grid-cols-2 gap-2 h-full justify-center items-start mt-2">
+                            {chunk.map((item, itemIdx) => (
+                              <div key={itemIdx} className="relative group">
+                                {renderTagItemCode(
+                                  tagAnimalId && animals.find(a => a.id === tagAnimalId) ? animals.find(a => a.id === tagAnimalId)!.label : '',
+                                  item.shareIdx,
+                                  item.shareName,
+                                  item.sharePhone,
+                                  true
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        );
+                      })}
+                      {chunkedSelectedTags.length === 0 && (
+                        <div className="text-center py-20 text-slate-400 font-medium whitespace-normal">
+                          <Printer className="mx-auto mb-3 text-slate-300 stroke-[1.5]" size={42} />
+                          <p className="text-xs">پرنٹ کرنے کے لیے کم از کم ایک حصہ کا انتخاب کریں</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Print Layout Hidden Divs */}
+                <div id="tags-print-container" className="hidden" dir="rtl" style={{ display: 'none' }}>
+                  {chunkedSelectedTags.map((chunk, chunkIdx) => {
+                    const isLandscapeMode = tagOrientation === 'landscape';
+                    return (
+                      <div key={chunkIdx} className="a4-page" style={{ width: isLandscapeMode ? '11.69in' : '8.27in', height: isLandscapeMode ? '8.27in' : '11.69in', padding: isLandscapeMode ? '0.25in 0.3in' : '0.3in 0.25in', boxSizing: 'border-box', pageBreakAfter: 'always', breakAfter: 'page', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', background: 'white' }}>
+                        <div className="tags-grid" style={{ display: 'grid', gridTemplateColumns: isLandscapeMode ? 'repeat(2, 4.0in)' : 'repeat(2, 3.8in)', gridTemplateRows: isLandscapeMode ? 'repeat(2, 3.8in)' : 'repeat(2, 4.0in)', gap: '0.15in', justifyContent: 'center', alignContent: 'start' }}>
+                          {chunk.map((item, itemIdx) => {
+                            const nameParts = parseShareholderName(item.shareName);
+                            const cardW = isLandscapeMode ? '4.0in' : '3.8in';
+                            const cardH = isLandscapeMode ? '3.8in' : '4.0in';
+                            return (
+                              <div key={itemIdx} className="tag-card" style={{ width: cardW, height: cardH, minWidth: cardW, maxWidth: cardW, minHeight: cardH, maxHeight: cardH, border: '4px solid #000000', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '14px', direction: 'rtl', textAlign: 'right', backgroundColor: '#ffffff', position: 'relative', overflow: 'hidden' }}>
+                                <div className="tag-section-top" style={{ height: '40%', borderBottom: '2px solid #000000', display: 'flex', flexDirection: 'column', justifyContent: 'space-around', paddingBottom: '6px' }}>
+                                  <div className="tag-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', direction: 'rtl' }}>
+                                    <span style={{ fontSize: '18px', fontWeight: 'bold' }}>گائے نمبر</span>
+                                    <div style={{ width: '48px', height: '48px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                      <span style={{ fontSize: '42px', fontWeight: '950', fontFamily: '"Inter", sans-serif', lineHeight: '1' }}>{item.cowNumber}</span>
+                                    </div>
+                                  </div>
+                                  <div className="tag-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', direction: 'rtl', marginTop: '4px' }}>
+                                    <span style={{ fontSize: '18px', fontWeight: 'bold' }}>حصہ نمبر</span>
+                                    <div style={{ width: '48px', height: '48px', border: '2px solid #000000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: '950', fontFamily: '"Inter", sans-serif', lineHeight: '1', boxSizing: 'border-box' }}>
+                                      {item.shareIdx}
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="tag-section-middle" style={{ height: '20%', borderBottom: '2px solid #000000', display: 'flex', alignItems: 'center', justifyContent: 'space-between', direction: 'rtl', padding: '1px 0' }}>
+                                  <span style={{ fontSize: '16px', fontWeight: 'bold' }}>رابطہ نمبر</span>
+                                  <span style={{ fontSize: '20px', fontWeight: '950', fontFamily: '"Inter", sans-serif' }}>{item.sharePhone || '_______________'}</span>
+                                </div>
+                                
+                                <div className="tag-section-bottom" style={{ height: '40%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingTop: '8px' }}>
+                                  <div style={{ width: '100%', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                                    <p style={{ fontSize: '22px', fontWeight: '950', margin: 0, lineHeight: '1.8', wordBreak: 'break-word', fontFamily: '"Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", sans-serif' }}>
+                                      {nameParts.main}
+                                    </p>
+                                    {nameParts.sub && (
+                                      <p style={{ fontSize: '17px', fontWeight: 'bold', margin: '4px 0 0 0', lineHeight: '1.6', wordBreak: 'break-word', fontFamily: '"Alvi Lahori Nastaliq", "Alvi Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", sans-serif', color: '#475569' }}>
+                                        {nameParts.sub}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'records' && (
+              <motion.div
+                key="records-view"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6"
+              >
+                {/* Control Panel Filter Card */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800">کھاتہ داران کا مکمل ڈیٹا ریکارڈ لسٹ</h3>
+                      <p className="text-xs text-slate-500 font-medium">یہاں مدرسہ کے تمام رجسٹرڈ حصہ داروں کے کوائف (نام، رسید نمبر، رابطہ وغیرہ) کی لسٹ اور اے فور (A4) پرنٹ ایبل دفتری رپورٹ فارمیٹ حاصل کریں۔</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setView('dashboard')}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-2xl transition-all"
+                      >
+                        ڈیش بورڈ پر جائیں
+                      </button>
+                      <button
+                        onClick={handlePrintRecords}
+                        disabled={filteredSharesForRecords.length === 0}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-2xl transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/10"
+                      >
+                        <Printer size={16} /> رپورٹ پرنٹ نکالیں
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter panel */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* Filter by Counter */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">کاؤنٹر کی بنیاد پر:</label>
+                      <select
+                        value={recordBranchFilter}
+                        onChange={(e) => setRecordBranchFilter(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        <option value="all">تمام کاؤنٹرز</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Filter by Animal */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">گائے نمبر کی بنیاد پر:</label>
+                      <select
+                        value={recordAnimalFilter}
+                        onChange={(e) => setRecordAnimalFilter(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        <option value="all">تمام گائے</option>
+                        {animals.map(a => (
+                          <option key={a.id} value={a.id.toString()}>{a.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Filter by payment */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">ادائیگی کا اسٹیٹس:</label>
+                      <select
+                        value={recordPaymentFilter}
+                        onChange={(e) => setRecordPaymentFilter(e.target.value as any)}
+                        className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        <option value="all">ادائیگی شدہ اور بقایا تمام</option>
+                        <option value="paid">صرف ادائیگی شدہ (پیسے وصول)</option>
+                        <option value="unpaid">صرف بقایا دھندگان</option>
+                      </select>
+                    </div>
+
+                    {/* Search bar */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">سیکورٹی / نام سرچ کریں:</label>
+                      <input
+                        type="text"
+                        value={recordSearchQuery}
+                        onChange={(e) => setRecordSearchQuery(e.target.value)}
+                        placeholder="کھاتہ دار کا نام، پتہ یا فون درج کریں..."
+                        className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:font-normal"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Spreadsheet layout */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-bold">
+                    <span className="text-slate-500">مجموعی فعال کوائف ریکارڈ لسٹ</span>
+                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">فلٹر شدہ تعداد: {filteredSharesForRecords.length} کھاتہ جات</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs border-collapse">
+                      <thead className="bg-slate-100/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider sticky top-0">
+                        <tr>
+                          <th className="p-3 text-center w-14">سیریل #</th>
+                          <th className="p-3">کھاتہ دار نام</th>
+                          <th className="p-3 text-center">بک نمبر</th>
+                          <th className="p-3 text-center">رسید نمبر</th>
+                          <th className="p-3 text-center">حصے تعداد</th>
+                          <th className="p-3">ایڈریس / پتہ</th>
+                          <th className="p-3 text-center">موبائل فون</th>
+                          <th className="p-3 text-center">ادائیگی حیثیت</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-800">
+                        {filteredSharesForRecords.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="p-3 text-center font-mono text-slate-400">{idx + 1}</td>
+                            <td className="p-3 text-slate-900">{item.share.name || '____________'}</td>
+                            <td className="p-3 text-center text-slate-400">—</td>
+                            <td className="p-3 text-center font-mono text-emerald-800">S-{item.share.id}</td>
+                            <td className="p-3 text-center font-mono">1</td>
+                            <td className="p-3 text-slate-500 max-w-xs truncate">{item.share.address || '____________'}</td>
+                            <td className="p-3 text-center font-mono text-slate-600 dir-ltr">{item.share.phone || '____________'}</td>
+                            <td className="p-3 text-center">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full inline-block ${item.share.isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {item.share.isPaid ? 'ادائیگی شدہ' : 'بقایا'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {filteredSharesForRecords.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="p-12 text-center text-slate-400">
+                              مطلوبہ فلٹرز کے مطابق کوئی ریکارڈ دستیاب نہیں ملا۔
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Print Layout Hidden Divs */}
+                <div id="records-print-container" className="hidden" dir="rtl" style={{ display: 'none' }}>
+                  <div className="print-header" style={{ textAlign: 'center', marginBottom: '24px', borderBottom: '3px double #000000', paddingBottom: '12px' }}>
+                    <h1 className="is-urdu print-title" style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 6px 0' }}>اجتماعی قربانی مدرسہ قاسم العلوم کورنگی 6</h1>
+                    <p style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px 0' }}>کھاتہ داران کا تفصیلی ریکارڈ و دستخط کھاتہ (سال {activeYear})</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '12px' }}>
+                      <span>کُل تعداد گائے حصے: {filteredSharesForRecords.length}</span>
+                      <span>پرنٹ تاریخ: {new Date().toLocaleDateString('ur-PK')}</span>
+                    </div>
+                  </div>
+                  
+                  <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse', direction: 'rtl', textAlign: 'right', fontSize: '11px', color: '#000000' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#f3f4f6' }}>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'center', width: '7%' }}>شمار</th>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'right', width: '25%' }}>نامِ حصہ دار</th>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'center', width: '10%' }}>بک نمبر</th>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'center', width: '12%' }}>رسید نمبر</th>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'center', width: '10%' }}>تعداد حصے</th>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'right', width: '22%' }}>ایڈریس / پتہ</th>
+                        <th style={{ border: '1px solid #111111', padding: '6px', fontWeight: 'bold', textAlign: 'center', width: '14%' }}>رابطہ نمبر</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSharesForRecords.map((item, idx) => (
+                        <tr key={idx}>
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}>{idx + 1}</td>
+                          <td className="text-right-important" style={{ border: '1px solid #111111', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{item.share.name || '____________'}</td>
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}></td> {/* Book Number - Empty */}
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>S-{item.share.id}</td>
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}>1</td>
+                          <td className="text-right-important" style={{ border: '1px solid #111111', padding: '6px', textAlign: 'right' }}>{item.share.address || '____________'}</td>
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center', direction: 'ltr', unicodeBidi: 'embed' }}>{item.share.phone || '____________'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </motion.div>
             )}
