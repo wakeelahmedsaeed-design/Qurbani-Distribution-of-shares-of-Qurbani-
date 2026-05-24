@@ -566,6 +566,8 @@ export default function App() {
   const [recordAnimalFilter, setRecordAnimalFilter] = useState<string>('all');
   const [recordPaymentFilter, setRecordPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [recordSearchQuery, setRecordSearchQuery] = useState<string>('');
+  const [recordAddressFilter, setRecordAddressFilter] = useState<string>('all');
+  const [recordReceiptSort, setRecordReceiptSort] = useState<'none' | 'asc'>('none');
 
   // Auto reset selected shares to all true when animal selection changes
   useEffect(() => {
@@ -1568,6 +1570,19 @@ export default function App() {
     return chunkArray(list, 4);
   }, [tagAnimalId, selectedTags, animals]);
 
+  // Unique addresses list for filtering (only valid non-empty ones)
+  const uniqueAddresses = useMemo(() => {
+    const addressesSet = new Set<string>();
+    animals.forEach(animal => {
+      animal.shares.forEach(share => {
+        if (share.address && share.address.trim() !== '') {
+          addressesSet.add(share.address.trim());
+        }
+      });
+    });
+    return Array.from(addressesSet).sort();
+  }, [animals]);
+
   // Selector to filter flat list of bookings for Data Record spreadsheet
   const filteredSharesForRecords = useMemo(() => {
     const list: { animalId: number; animalLabel: string; share: Share; shareIdx: number }[] = [];
@@ -1586,6 +1601,10 @@ export default function App() {
           if (!share.isPaid) return;
         } else if (recordPaymentFilter === 'unpaid') {
           if (share.isPaid) return;
+        }
+        // filter by address
+        if (recordAddressFilter !== 'all') {
+          if (!share.address || share.address.trim() !== recordAddressFilter) return;
         }
         // search query
         if (recordSearchQuery.trim() !== '') {
@@ -1606,8 +1625,18 @@ export default function App() {
         });
       });
     });
+
+    // sort by receipt number if requested
+    if (recordReceiptSort === 'asc') {
+      list.sort((a, b) => {
+        const recA = a.share.customReceiptId || `S-${a.share.id}`;
+        const recB = b.share.customReceiptId || `S-${b.share.id}`;
+        return recA.localeCompare(recB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+
     return list;
-  }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery]);
+  }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort]);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3351,14 +3380,41 @@ export default function App() {
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-right text-xs border-collapse">
-                      <thead className="bg-slate-100/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider sticky top-0">
+                      <thead className="bg-slate-100/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider sticky top-0 text-right">
                         <tr>
                           <th className="p-3 text-center w-14">سیریل #</th>
                           <th className="p-3">کھاتہ دار نام</th>
                           <th className="p-3 text-center">بک نمبر</th>
-                          <th className="p-3 text-center">رسید نمبر</th>
+                          <th 
+                            className="p-3 text-center cursor-pointer select-none hover:bg-slate-200 hover:text-slate-800 transition-colors"
+                            onClick={() => setRecordReceiptSort(prev => prev === 'asc' ? 'none' : 'asc')}
+                            title="رسید نمبر کے مطابق ترتیب دیں"
+                          >
+                            <div className="flex items-center justify-center gap-1.5 inline-flex">
+                              <span>رسید نمبر</span>
+                              <span className={`text-base transition-all ${recordReceiptSort === 'asc' ? 'text-indigo-600 font-extrabold scale-110' : 'text-slate-300'}`}>
+                                {recordReceiptSort === 'asc' ? '↑' : '↕'}
+                              </span>
+                            </div>
+                          </th>
                           <th className="p-3 text-center">حصے تعداد</th>
-                          <th className="p-3">ایڈریس / پتہ</th>
+                          <th className="p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span>ایڈریس / پتہ</span>
+                              <div className="print:hidden" onClick={(e) => e.stopPropagation()}>
+                                <select
+                                  value={recordAddressFilter}
+                                  onChange={(e) => setRecordAddressFilter(e.target.value)}
+                                  className="bg-white border border-slate-200 px-2 py-0.5 rounded-lg text-[10px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 max-w-[130px] shadow-sm cursor-pointer"
+                                >
+                                  <option value="all">تمام پتے (سب)</option>
+                                  {uniqueAddresses.map(addr => (
+                                    <option key={addr} value={addr}>{addr}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </th>
                           <th className="p-3 text-center">موبائل فون</th>
                           <th className="p-3 text-center">ادائیگی حیثیت</th>
                         </tr>
@@ -3420,7 +3476,7 @@ export default function App() {
                         <tr key={idx}>
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}>{idx + 1}</td>
                           <td className="text-right-important" style={{ border: '1px solid #111111', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{item.share.name || '____________'}</td>
-                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}></td> {/* Book Number - Empty */}
+                          <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}></td>
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{item.share.customReceiptId || `S-${item.share.id}`}</td>
                           <td style={{ border: '1px solid #111111', padding: '6px', textAlign: 'center' }}>1</td>
                           <td className="text-right-important" style={{ border: '1px solid #111111', padding: '6px', textAlign: 'right' }}>{item.share.address || '____________'}</td>
