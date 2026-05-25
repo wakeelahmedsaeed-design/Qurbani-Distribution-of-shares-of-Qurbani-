@@ -143,6 +143,53 @@ const DEFAULT_BRANCHES: Branch[] = [
   { id: 'qayyumabad_iqbal', centerId: 'qayyumabad', centerLabel: 'قیوم آباد', label: 'قاری اقبال', role: 'qari', color: 'bg-sky-600', textColor: 'text-sky-700', accent: 'sky', password: '123' }
 ];
 
+const CompactStepper = ({ 
+  value, 
+  onChange, 
+  disabled, 
+  min = 0, 
+  max = 999 
+}: { 
+  value: number; 
+  onChange: (val: number) => void; 
+  disabled?: boolean; 
+  min?: number; 
+  max?: number; 
+}) => {
+  return (
+    <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg px-1 py-0.5 max-w-[84px] justify-between shadow-inner">
+      <button
+        type="button"
+        disabled={disabled || value <= min}
+        onClick={() => onChange(Math.max(min, value - 1))}
+        className="w-4 h-4 bg-slate-900 hover:bg-slate-700 disabled:opacity-20 text-slate-300 rounded text-center flex items-center justify-center font-bold text-[9px] select-none transition-colors"
+      >
+        -
+      </button>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        disabled={disabled}
+        value={value}
+        onChange={(e) => {
+          const v = Math.max(min, Math.min(max, Number(e.target.value) || 0));
+          onChange(v);
+        }}
+        className="w-8 bg-transparent text-center text-white font-mono text-[10px] font-black focus:outline-none focus:ring-0 p-0 border-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+      />
+      <button
+        type="button"
+        disabled={disabled || value >= max}
+        onClick={() => onChange(Math.min(max, value + 1))}
+        className="w-4 h-4 bg-slate-900 hover:bg-slate-700 disabled:opacity-20 text-slate-300 rounded text-center flex items-center justify-center font-bold text-[9px] select-none transition-colors"
+      >
+        +
+      </button>
+    </div>
+  );
+};
+
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits' | 'tags' | 'records' | 'ledger' | 'hides'>(() => {
     return (sessionStorage.getItem('qurbani_active_view') as any) || 'dashboard';
@@ -176,7 +223,16 @@ export default function App() {
     cowRate: number;
     goatRate: number;
     dailyRate: number;
+    nazimDailyRate: number;
+    ustadhDailyRate: number;
+    studentDailyRate: number;
     workerDutyDays: { [branchId: string]: number };
+    nazimDutyDays: { [branchId: string]: number };
+    ustadhDutyDays: { [branchId: string]: number };
+    studentDutyDays: { [branchId: string]: number };
+    nazimCounts: { [branchId: string]: number };
+    ustadhCounts: { [branchId: string]: number };
+    studentCounts: { [branchId: string]: number };
   }>(() => {
     const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
     const saved = localStorage.getItem(`qurbani_wage_rates_v1_${activeYr}`);
@@ -188,13 +244,37 @@ export default function App() {
           cowRate: typeof parsed.cowRate === 'number' ? parsed.cowRate : 300,
           goatRate: typeof parsed.goatRate === 'number' ? parsed.goatRate : 150,
           dailyRate: typeof parsed.dailyRate === 'number' ? parsed.dailyRate : 2000,
-          workerDutyDays: parsed.workerDutyDays || {}
+          nazimDailyRate: typeof parsed.nazimDailyRate === 'number' ? parsed.nazimDailyRate : 2500,
+          ustadhDailyRate: typeof parsed.ustadhDailyRate === 'number' ? parsed.ustadhDailyRate : 1800,
+          studentDailyRate: typeof parsed.studentDailyRate === 'number' ? parsed.studentDailyRate : 1000,
+          workerDutyDays: parsed.workerDutyDays || {},
+          nazimDutyDays: parsed.nazimDutyDays || {},
+          ustadhDutyDays: parsed.ustadhDutyDays || {},
+          studentDutyDays: parsed.studentDutyDays || {},
+          nazimCounts: parsed.nazimCounts || {},
+          ustadhCounts: parsed.ustadhCounts || {},
+          studentCounts: parsed.studentCounts || {},
         };
       } catch (e) {
         console.error(e);
       }
     }
-    return { camelRate: 500, cowRate: 300, goatRate: 150, dailyRate: 2000, workerDutyDays: {} };
+    return {
+      camelRate: 500,
+      cowRate: 300,
+      goatRate: 150,
+      dailyRate: 2000,
+      nazimDailyRate: 2500,
+      ustadhDailyRate: 1800,
+      studentDailyRate: 1000,
+      workerDutyDays: {},
+      nazimDutyDays: {},
+      ustadhDutyDays: {},
+      studentDutyDays: {},
+      nazimCounts: {},
+      ustadhCounts: {},
+      studentCounts: {}
+    };
   });
 
   // Form states for adding a hide collection
@@ -512,7 +592,22 @@ export default function App() {
 
     // Load new year wage rates
     const savedWageRates = localStorage.getItem(`qurbani_wage_rates_v1_${newYear}`);
-    let loadedWageRates = { camelRate: 500, cowRate: 300, goatRate: 150, dailyRate: 2000, workerDutyDays: {} };
+    let loadedWageRates = {
+      camelRate: 500,
+      cowRate: 300,
+      goatRate: 150,
+      dailyRate: 2000,
+      nazimDailyRate: 2500,
+      ustadhDailyRate: 1800,
+      studentDailyRate: 1000,
+      workerDutyDays: {},
+      nazimDutyDays: {},
+      ustadhDutyDays: {},
+      studentDutyDays: {},
+      nazimCounts: {},
+      ustadhCounts: {},
+      studentCounts: {}
+    };
     if (savedWageRates) {
       try {
         const parsed = JSON.parse(savedWageRates);
@@ -521,7 +616,16 @@ export default function App() {
           cowRate: typeof parsed.cowRate === 'number' ? parsed.cowRate : 300,
           goatRate: typeof parsed.goatRate === 'number' ? parsed.goatRate : 150,
           dailyRate: typeof parsed.dailyRate === 'number' ? parsed.dailyRate : 2000,
-          workerDutyDays: parsed.workerDutyDays || {}
+          nazimDailyRate: typeof parsed.nazimDailyRate === 'number' ? parsed.nazimDailyRate : 2500,
+          ustadhDailyRate: typeof parsed.ustadhDailyRate === 'number' ? parsed.ustadhDailyRate : 1800,
+          studentDailyRate: typeof parsed.studentDailyRate === 'number' ? parsed.studentDailyRate : 1000,
+          workerDutyDays: parsed.workerDutyDays || {},
+          nazimDutyDays: parsed.nazimDutyDays || {},
+          ustadhDutyDays: parsed.ustadhDutyDays || {},
+          studentDutyDays: parsed.studentDutyDays || {},
+          nazimCounts: parsed.nazimCounts || {},
+          ustadhCounts: parsed.ustadhCounts || {},
+          studentCounts: parsed.studentCounts || {},
         };
       } catch (e) {
         console.error(e);
@@ -1932,25 +2036,6 @@ export default function App() {
     return list;
   }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort]);
 
-  // Hides Collections summaries
-  const hidesStats = useMemo(() => {
-    let camel = 0;
-    let cow = 0;
-    let goat = 0;
-    const currentYrHides = hides.filter(h => h.year === activeYear);
-    currentYrHides.forEach(h => {
-      camel += (h.camelCount || 0);
-      cow += (h.cowCount || 0);
-      goat += (h.goatCount || 0);
-    });
-    return {
-      camel,
-      cow,
-      goat,
-      total: camel + cow + goat
-    };
-  }, [hides, activeYear]);
-
   // Employee / Nazim compensation ledger & payroll sheet
   const hidesPayroll = useMemo(() => {
     // Group hides counts by branch/worker
@@ -1972,22 +2057,78 @@ export default function App() {
 
     return branches.map(b => {
       const stats = branchStats[b.id] || { camel: 0, cow: 0, goat: 0, total: 0 };
-      const dutyDays = wageRates.workerDutyDays[b.id] ?? 3; // default 3 days
+      
+      const nazimCount = typeof wageRates.nazimCounts?.[b.id] === 'number'
+        ? wageRates.nazimCounts[b.id]
+        : (b.role === 'nazim' ? 1 : 0);
+
+      const ustadhCount = typeof wageRates.ustadhCounts?.[b.id] === 'number'
+        ? wageRates.ustadhCounts[b.id]
+        : (b.id !== 'hq' ? 1 : 0);
+
+      const studentCount = typeof wageRates.studentCounts?.[b.id] === 'number'
+        ? wageRates.studentCounts[b.id]
+        : (b.id !== 'hq' ? 15 : 0);
+
+      const nazimDays = typeof wageRates.nazimDutyDays?.[b.id] === 'number' 
+        ? wageRates.nazimDutyDays[b.id] 
+        : (typeof wageRates.workerDutyDays?.[b.id] === 'number' ? wageRates.workerDutyDays[b.id] : (b.role === 'nazim' ? 3 : 0));
+
+      const ustadhDays = typeof wageRates.ustadhDutyDays?.[b.id] === 'number' 
+        ? wageRates.ustadhDutyDays[b.id] 
+        : (typeof wageRates.workerDutyDays?.[b.id] === 'number' ? wageRates.workerDutyDays[b.id] : 3);
+
+      const studentDays = typeof wageRates.studentDutyDays?.[b.id] === 'number' 
+        ? wageRates.studentDutyDays[b.id] 
+        : (typeof wageRates.workerDutyDays?.[b.id] === 'number' ? wageRates.workerDutyDays[b.id] : 3);
+
       const hideCommission = (stats.camel * wageRates.camelRate) + 
                              (stats.cow * wageRates.cowRate) + 
                              (stats.goat * wageRates.goatRate);
-      const dailyWages = dutyDays * wageRates.dailyRate;
+
+      const nazimWages = nazimCount * nazimDays * (wageRates.nazimDailyRate ?? 2500);
+      const ustadhWages = ustadhCount * ustadhDays * (wageRates.ustadhDailyRate ?? 1800);
+      const studentWages = studentCount * studentDays * (wageRates.studentDailyRate ?? 1000);
+      const dailyWages = nazimWages + ustadhWages + studentWages;
+
       const netPayable = hideCommission + dailyWages;
       return {
         branch: b,
         stats,
-        dutyDays,
+        nazimCount,
+        ustadhCount,
+        studentCount,
+        nazimDays,
+        ustadhDays,
+        studentDays,
+        nazimWages,
+        ustadhWages,
+        studentWages,
         hideCommission,
         dailyWages,
         netPayable
       };
     });
   }, [branches, hides, wageRates, activeYear]);
+
+  // Hides Collections summaries
+  const hidesStats = useMemo(() => {
+    let camel = 0;
+    let cow = 0;
+    let goat = 0;
+    const currentYrHides = hides.filter(h => h.year === activeYear);
+    currentYrHides.forEach(h => {
+      camel += (h.camelCount || 0);
+      cow += (h.cowCount || 0);
+      goat += (h.goatCount || 0);
+    });
+    return {
+      camel,
+      cow,
+      goat,
+      total: camel + cow + goat
+    };
+  }, [hides, activeYear]);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3493,20 +3634,20 @@ export default function App() {
                     </div>
                     {/* Role badge */}
                     <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl border ${
-                      isNazim ? 'bg-amber-900/40 text-amber-300 border-amber-900/60' : 'bg-rose-900/40 text-rose-300 border-rose-900/50 animate-pulse'
+                      isSuperAdmin ? 'bg-rose-900/40 text-rose-300 border-rose-900/50 animate-pulse' : 'bg-amber-900/40 text-amber-300 border-amber-900/60'
                     }`}>
-                      انتظامی اختیار: {isNazim ? 'ناظم - صرف مشاہدہ' : 'مرکزی سپر ایڈمن - کُل ایڈٹ بحال'}
+                      انتظامی اختیار: {isSuperAdmin ? 'مرکزی سپر ایڈمن - کُل ایڈٹ بحال' : 'ناظم شعبہ - اپنا کاؤنٹر ایڈٹ'}
                     </span>
                   </div>
 
-                  {/* Config Block: editable ONLY by super admin (isNazim is false means it's super admin) */}
-                  <div className="bg-slate-850 rounded-2xl p-5 grid grid-cols-2 md:grid-cols-4 gap-4 border border-slate-800">
+                  {/* Config Block: editable ONLY by super admin (isSuperAdmin is true) */}
+                  <div className="bg-slate-850 rounded-2xl p-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 border border-slate-800">
                     {/* Camel hide wages rate */}
                     <div className="space-y-1">
-                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">اونٹ کھال انعام ریٹ (فی عدد):</span>
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">اونٹ انعام ریٹ (فی عدد):</span>
                       <input
                         type="number"
-                        disabled={isNazim}
+                        disabled={!isSuperAdmin}
                         value={wageRates.camelRate}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
@@ -3518,10 +3659,10 @@ export default function App() {
 
                     {/* Cow hide reward rate */}
                     <div className="space-y-1">
-                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">گائے کھال انعام ریٹ (فی عدد):</span>
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">گائے انعام ریٹ (فی عدد):</span>
                       <input
                         type="number"
-                        disabled={isNazim}
+                        disabled={!isSuperAdmin}
                         value={wageRates.cowRate}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
@@ -3533,10 +3674,10 @@ export default function App() {
 
                     {/* Goat hide reward rate */}
                     <div className="space-y-1">
-                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">بکری کھال انعام ریٹ (فی عدد):</span>
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">بکری انعام ریٹ (فی عدد):</span>
                       <input
                         type="number"
-                        disabled={isNazim}
+                        disabled={!isSuperAdmin}
                         value={wageRates.goatRate}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
@@ -3546,16 +3687,46 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Daily base wage worker rate */}
+                    {/* Nazim Daily Wage */}
                     <div className="space-y-1">
-                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">یومیہ مقررہ بیرونی اجرت (روپے):</span>
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">ناظم یومیہ اجرت (روپے):</span>
                       <input
                         type="number"
-                        disabled={isNazim}
-                        value={wageRates.dailyRate}
+                        disabled={!isSuperAdmin}
+                        value={wageRates.nazimDailyRate ?? 2500}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
-                          setWageRates(prev => ({ ...prev, dailyRate: val }));
+                          setWageRates(prev => ({ ...prev, nazimDailyRate: val }));
+                        }}
+                        className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
+                      />
+                    </div>
+
+                    {/* Ustadh Daily Wage */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">استاذ یومیہ اجرت (روپے):</span>
+                      <input
+                        type="number"
+                        disabled={!isSuperAdmin}
+                        value={wageRates.ustadhDailyRate ?? 1800}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setWageRates(prev => ({ ...prev, ustadhDailyRate: val }));
+                        }}
+                        className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
+                      />
+                    </div>
+
+                    {/* Student Daily Wage */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">طالبعلم یومیہ اجرت (روپے):</span>
+                      <input
+                        type="number"
+                        disabled={!isSuperAdmin}
+                        value={wageRates.studentDailyRate ?? 1000}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setWageRates(prev => ({ ...prev, studentDailyRate: val }));
                         }}
                         className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
                       />
@@ -3567,71 +3738,35 @@ export default function App() {
                     <table className="w-full text-xs text-right border-collapse">
                       <thead>
                         <tr className="bg-slate-800 border-b border-slate-700 text-slate-350 leading-relaxed font-black">
-                          <th className="py-3 px-4 text-right">قربانی کاؤنٹر / ملازم</th>
-                          <th className="py-3 px-4 text-center">خدمت گزار</th>
+                          <th className="py-3 px-4 text-right">قربانی کاؤنٹر / شاخ</th>
                           <th className="py-3 px-4 text-center">وصول کھالیں</th>
-                          <th className="py-3 px-4 text-center">ایام ڈیوٹی</th>
                           <th className="py-3 px-4 text-center">کھال انعام رقم</th>
-                          <th className="py-3 px-4 text-center">یومیہ اجرت فکسڈ</th>
+                          <th className="py-3 px-4 text-center">افرادی قوت کی تعداد (تعداد)</th>
+                          <th className="py-3 px-4 text-center">ایامِ کارِ ڈیوٹی (ایام)</th>
+                          <th className="py-3 px-4 text-center">اجرت تفصیل (تعداد × ایام × ریٹ)</th>
                           <th className="py-3 px-4 text-left">کُل واجب الادا</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800 text-slate-300 font-sans">
                         {hidesPayroll.map((item) => {
                           if (item.branch.id === 'hq') return null; // HQ represents central office, excluding from payroll
+                          const canEdit = isSuperAdmin || (isAuthenticated && activeBranch === item.branch.id);
                           return (
                             <tr key={item.branch.id} className="hover:bg-slate-820 transition-all">
                               {/* Branch label */}
                               <td className="py-3.5 px-4 font-black text-slate-100 font-sans">
                                 {item.branch.centerLabel || 'مرکز'} — <span className="text-slate-400 text-[10px]">{item.branch.label}</span>
-                              </td>
-                              
-                              {/* Supervisor title */}
-                              <td className="py-3.5 px-4 text-center font-bold text-slate-400">
-                                {item.branch.role === 'nazim' ? 'ناظم علاقہ' : 'ماتحت قاری'}
+                                <div className="text-[9px] font-normal text-slate-500 mt-0.5">
+                                  {item.branch.role === 'nazim' ? 'ناظمِ شاخ کلاں' : 'ماتحت قاری کاؤنٹر'}
+                                </div>
                               </td>
 
                               {/* Hides count split */}
                               <td className="py-3.5 px-4 text-center font-mono font-black text-slate-200">
                                 <span className="text-slate-200">{item.stats.total} </span>
-                                <span className="text-[9px] text-slate-500 font-normal">
-                                  ({item.stats.camel}O, {item.stats.cow}C, {item.stats.goat}G)
+                                <span className="text-[9px] text-slate-500 font-normal block">
+                                  (اونٹ: {item.stats.camel}، گائے: {item.stats.cow}، بکری: {item.stats.goat})
                                 </span>
-                              </td>
-
-                              {/* Duty Days editable */}
-                              <td className="py-3.5 px-4 text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => {
-                                      if (isNazim) return;
-                                      const cur = wageRates.workerDutyDays[item.branch.id] ?? 3;
-                                      setWageRates(prev => ({
-                                        ...prev,
-                                        workerDutyDays: { ...prev.workerDutyDays, [item.branch.id]: Math.max(0, cur - 1) }
-                                      }));
-                                    }}
-                                    disabled={isNazim}
-                                    className="w-5 h-5 bg-slate-800 disabled:opacity-40 hover:bg-slate-700 rounded text-center flex items-center justify-center font-bold text-[10px]"
-                                  >
-                                    -
-                                  </button>
-                                  <span className="text-xs font-mono font-black text-slate-100">{item.dutyDays} دن</span>
-                                  <button
-                                    onClick={() => {
-                                      if (isNazim) return;
-                                      const cur = wageRates.workerDutyDays[item.branch.id] ?? 3;
-                                      setWageRates(prev => ({
-                                        ...prev,
-                                        workerDutyDays: { ...prev.workerDutyDays, [item.branch.id]: cur + 1 }
-                                      }));
-                                    }}
-                                    disabled={isNazim}
-                                    className="w-5 h-5 bg-slate-800 disabled:opacity-40 hover:bg-slate-700 rounded text-center flex items-center justify-center font-bold text-[10px]"
-                                  >
-                                    +
-                                  </button>
-                                </div>
                               </td>
 
                               {/* Hide Commission amount */}
@@ -3639,9 +3774,128 @@ export default function App() {
                                 {item.hideCommission.toLocaleString('ur-PK')} <span className="text-[9px] font-sans">روپے</span>
                               </td>
 
-                              {/* Daily standard wages */}
-                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">
-                                {item.dailyWages.toLocaleString('ur-PK')} <span className="text-[9px] font-sans">روپے</span>
+                              {/* Staff counts editable stepper */}
+                              <td className="py-3.5 px-4 text-center">
+                                <div className="space-y-1.5 flex flex-col items-center">
+                                  {/* Nazim Count */}
+                                  <div className="flex items-center gap-1.5 justify-between w-full max-w-[130px]">
+                                    <span className="text-[10px] text-slate-400 font-bold min-w-[36px]">ناظم:</span>
+                                    <CompactStepper
+                                      value={item.nazimCount}
+                                      disabled={!canEdit}
+                                      onChange={(val) => {
+                                        setWageRates(prev => ({
+                                          ...prev,
+                                          nazimCounts: { ...prev.nazimCounts, [item.branch.id]: val }
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                  {/* Ustadh Count */}
+                                  <div className="flex items-center gap-1.5 justify-between w-full max-w-[130px]">
+                                    <span className="text-[10px] text-slate-400 font-bold min-w-[36px]">استاذ:</span>
+                                    <CompactStepper
+                                      value={item.ustadhCount}
+                                      disabled={!canEdit}
+                                      onChange={(val) => {
+                                        setWageRates(prev => ({
+                                          ...prev,
+                                          ustadhCounts: { ...prev.ustadhCounts, [item.branch.id]: val }
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                  {/* Student Count */}
+                                  <div className="flex items-center gap-1.5 justify-between w-full max-w-[130px]">
+                                    <span className="text-[10px] text-slate-400 font-bold min-w-[36px]">طالب:</span>
+                                    <CompactStepper
+                                      value={item.studentCount}
+                                      disabled={!canEdit}
+                                      onChange={(val) => {
+                                        setWageRates(prev => ({
+                                          ...prev,
+                                          studentCounts: { ...prev.studentCounts, [item.branch.id]: val }
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Duty Days editable stepper */}
+                              <td className="py-3.5 px-4 text-center">
+                                <div className="space-y-1.5 flex flex-col items-center">
+                                  {/* Nazim Days */}
+                                  <div className="flex items-center gap-1.5 justify-between w-full max-w-[130px]">
+                                    <span className="text-[10px] text-slate-400 font-bold min-w-[36px]">ناظم:</span>
+                                    <CompactStepper
+                                      value={item.nazimDays}
+                                      disabled={!canEdit}
+                                      onChange={(val) => {
+                                        setWageRates(prev => ({
+                                          ...prev,
+                                          nazimDutyDays: { ...prev.nazimDutyDays, [item.branch.id]: val }
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                  {/* Ustadh Days */}
+                                  <div className="flex items-center gap-1.5 justify-between w-full max-w-[130px]">
+                                    <span className="text-[10px] text-slate-400 font-bold min-w-[36px]">استاذ:</span>
+                                    <CompactStepper
+                                      value={item.ustadhDays}
+                                      disabled={!canEdit}
+                                      onChange={(val) => {
+                                        setWageRates(prev => ({
+                                          ...prev,
+                                          ustadhDutyDays: { ...prev.ustadhDutyDays, [item.branch.id]: val }
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                  {/* Student Days */}
+                                  <div className="flex items-center gap-1.5 justify-between w-full max-w-[130px]">
+                                    <span className="text-[10px] text-slate-400 font-bold min-w-[36px]">طالب:</span>
+                                    <CompactStepper
+                                      value={item.studentDays}
+                                      disabled={!canEdit}
+                                      onChange={(val) => {
+                                        setWageRates(prev => ({
+                                          ...prev,
+                                          studentDutyDays: { ...prev.studentDutyDays, [item.branch.id]: val }
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Wages Breakdown Detail */}
+                              <td className="py-3.5 px-4">
+                                <div className="space-y-1 text-right text-[10px] inline-block bg-slate-900/40 p-2.5 rounded-xl border border-slate-800/80">
+                                  {item.nazimCount > 0 && item.nazimDays > 0 && (
+                                    <div className="text-slate-400 font-sans flex justify-between gap-3 min-w-[155px]">
+                                      <span>ناظم ({item.nazimCount}×{item.nazimDays}د):</span>
+                                      <span className="font-mono text-slate-300">{(wageRates.nazimDailyRate ?? 2500).toLocaleString('ur-PK')} = <strong className="text-slate-100 font-black">{item.nazimWages.toLocaleString('ur-PK')}</strong></span>
+                                    </div>
+                                  )}
+                                  {item.ustadhCount > 0 && item.ustadhDays > 0 && (
+                                    <div className="text-slate-400 font-sans flex justify-between gap-3 min-w-[155px]">
+                                      <span>استاذ ({item.ustadhCount}×{item.ustadhDays}د):</span>
+                                      <span className="font-mono text-slate-300">{(wageRates.ustadhDailyRate ?? 1800).toLocaleString('ur-PK')} = <strong className="text-slate-100 font-black">{item.ustadhWages.toLocaleString('ur-PK')}</strong></span>
+                                    </div>
+                                  )}
+                                  {item.studentCount > 0 && item.studentDays > 0 && (
+                                    <div className="text-slate-400 font-sans flex justify-between gap-3 min-w-[155px]">
+                                      <span>طالب ({item.studentCount}×{item.studentDays}د):</span>
+                                      <span className="font-mono text-slate-300">{(wageRates.studentDailyRate ?? 1000).toLocaleString('ur-PK')} = <strong className="text-slate-100 font-black">{item.studentWages.toLocaleString('ur-PK')}</strong></span>
+                                    </div>
+                                  )}
+                                  <div className="border-t border-slate-700/50 pt-1 text-slate-300 font-black font-sans flex justify-between gap-3 mt-1">
+                                    <span>میزان اجرت:</span>
+                                    <span className="font-mono text-amber-400">{item.dailyWages.toLocaleString('ur-PK')} روپے</span>
+                                  </div>
+                                </div>
                               </td>
 
                               {/* Net payable sum */}
