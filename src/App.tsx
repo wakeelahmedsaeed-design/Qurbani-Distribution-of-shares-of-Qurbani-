@@ -73,8 +73,23 @@ interface ActivityLog {
   id: string;
   timestamp: string;
   branch: string;
-  type: 'payment' | 'distribution' | 'add_animal' | 'remove_animal' | 'deposit' | 'transfer';
+  type: 'payment' | 'distribution' | 'add_animal' | 'remove_animal' | 'deposit' | 'transfer' | 'hide_received';
   details: string;
+}
+
+interface HideCollection {
+  id: string;
+  date: string;
+  donorName: string;
+  donorPhone: string;
+  donorAddress?: string;
+  camelCount: number;
+  cowCount: number;
+  goatCount: number;
+  collectedByBranchId: string;
+  collectedByBranchLabel: string;
+  centerId: string;
+  year: string;
 }
 
 const SHARES_PER_ANIMAL = 7;
@@ -129,7 +144,7 @@ const DEFAULT_BRANCHES: Branch[] = [
 ];
 
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits' | 'tags' | 'records' | 'ledger'>(() => {
+  const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits' | 'tags' | 'records' | 'ledger' | 'hides'>(() => {
     return (sessionStorage.getItem('qurbani_active_view') as any) || 'dashboard';
   });
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
@@ -139,6 +154,63 @@ export default function App() {
   const [activeYear, setActiveYear] = useState<string>(() => {
     return localStorage.getItem('qurbani_active_year_v2') || '2026';
   });
+
+  // Hides Collections list
+  const [hides, setHides] = useState<HideCollection[]>(() => {
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const saved = localStorage.getItem(`qurbani_hides_v1_${activeYr}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [];
+  });
+
+  // Wage parameters (configured only by super_admin)
+  const [wageRates, setWageRates] = useState<{
+    camelRate: number;
+    cowRate: number;
+    goatRate: number;
+    dailyRate: number;
+    workerDutyDays: { [branchId: string]: number };
+  }>(() => {
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const saved = localStorage.getItem(`qurbani_wage_rates_v1_${activeYr}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          camelRate: typeof parsed.camelRate === 'number' ? parsed.camelRate : 500,
+          cowRate: typeof parsed.cowRate === 'number' ? parsed.cowRate : 300,
+          goatRate: typeof parsed.goatRate === 'number' ? parsed.goatRate : 150,
+          dailyRate: typeof parsed.dailyRate === 'number' ? parsed.dailyRate : 2000,
+          workerDutyDays: parsed.workerDutyDays || {}
+        };
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return { camelRate: 500, cowRate: 300, goatRate: 150, dailyRate: 2000, workerDutyDays: {} };
+  });
+
+  // Form states for adding a hide collection
+  const [hideDonorName, setHideDonorName] = useState('');
+  const [hideDonorPhone, setHideDonorPhone] = useState('');
+  const [hideDonorAddress, setHideDonorAddress] = useState('');
+  const [hideCamelCount, setHideCamelCount] = useState<number>(0);
+  const [hideCowCount, setHideCowCount] = useState<number>(0);
+  const [hideGoatCount, setHideGoatCount] = useState<number>(0);
+
+  // Slip printable modal state
+  const [activeHideSlip, setActiveHideSlip] = useState<HideCollection | null>(null);
+
+  // Filters for hides view list
+  const [hidesSearchQuery, setHidesSearchQuery] = useState('');
+  const [hidesBranchFilter, setHidesBranchFilter] = useState('all');
 
   const [years, setYears] = useState<string[]>(() => {
     const saved = localStorage.getItem('qurbani_years_list_v1');
@@ -393,7 +465,7 @@ export default function App() {
   const [depositReference, setDepositReference] = useState('');
 
   // broadcast synchronization channel
-  const broadcastSync = (updatedAnimals: Animal[], updatedDeposits: DepositRecord[], updatedLogs: ActivityLog[], updatedBranches?: Branch[], updatedYear?: string) => {
+  const broadcastSync = (updatedAnimals: Animal[], updatedDeposits: DepositRecord[], updatedLogs: ActivityLog[], updatedBranches?: Branch[], updatedYear?: string, updatedHides?: HideCollection[], updatedWageRates?: any) => {
     try {
       const channel = new BroadcastChannel('qurbani_realtime_sync');
       channel.postMessage({
@@ -401,7 +473,9 @@ export default function App() {
         deposits: updatedDeposits,
         logs: updatedLogs,
         branches: updatedBranches || branches,
-        year: updatedYear || activeYear
+        year: updatedYear || activeYear,
+        hides: updatedHides || hides,
+        wageRates: updatedWageRates || wageRates
       });
       channel.close();
     } catch (e) {
@@ -422,6 +496,38 @@ export default function App() {
       if (!isNaN(parsed) && parsed > 0) newAmount = parsed;
     }
     setGlobalShareAmount(newAmount);
+
+    // Load new year hides
+    const savedHides = localStorage.getItem(`qurbani_hides_v1_${newYear}`);
+    let loadedHides: HideCollection[] = [];
+    if (savedHides) {
+      try {
+        const parsed = JSON.parse(savedHides);
+        if (Array.isArray(parsed)) loadedHides = parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setHides(loadedHides);
+
+    // Load new year wage rates
+    const savedWageRates = localStorage.getItem(`qurbani_wage_rates_v1_${newYear}`);
+    let loadedWageRates = { camelRate: 500, cowRate: 300, goatRate: 150, dailyRate: 2000, workerDutyDays: {} };
+    if (savedWageRates) {
+      try {
+        const parsed = JSON.parse(savedWageRates);
+        loadedWageRates = {
+          camelRate: typeof parsed.camelRate === 'number' ? parsed.camelRate : 500,
+          cowRate: typeof parsed.cowRate === 'number' ? parsed.cowRate : 300,
+          goatRate: typeof parsed.goatRate === 'number' ? parsed.goatRate : 150,
+          dailyRate: typeof parsed.dailyRate === 'number' ? parsed.dailyRate : 2000,
+          workerDutyDays: parsed.workerDutyDays || {}
+        };
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setWageRates(loadedWageRates);
 
     // Load new year animals
     const savedData = localStorage.getItem(`qurbani_data_v4_${newYear}`);
@@ -536,6 +642,60 @@ export default function App() {
     });
   };
 
+  // Submit new hides collection record
+  const submitHideCollection = () => {
+    if (hideCamelCount <= 0 && hideCowCount <= 0 && hideGoatCount <= 0) {
+      alert("براہ کرم کوئی ایک قسم کی کھال کی تعداد درج فرمائیں!");
+      return;
+    }
+    const bObj = branches.find(b => b.id === activeBranch) || branches[0];
+    const newCollection: HideCollection = {
+      id: `H${Math.floor(1000 + Math.random() * 9000)}`, // Urdu / Friendly Slip number
+      year: activeYear,
+      donorName: hideDonorName.trim() || 'گمنام عطیہ کنندہ',
+      donorPhone: hideDonorPhone.trim(),
+      donorAddress: hideDonorAddress.trim(),
+      camelCount: Number(hideCamelCount) || 0,
+      cowCount: Number(hideCowCount) || 0,
+      goatCount: Number(hideGoatCount) || 0,
+      collectedByBranchId: activeBranch,
+      collectedByBranchLabel: bObj ? `${bObj.centerLabel} - ${bObj.label}` : 'کاؤنٹر',
+      centerId: bObj ? bObj.centerId : 'default',
+      date: new Date().toLocaleString('ur-PK', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short', year: 'numeric' })
+    };
+
+    const updated = [newCollection, ...hides];
+    setHides(updated);
+    
+    // reset form inputs
+    setHideDonorName('');
+    setHideDonorPhone('');
+    setHideDonorAddress('');
+    setHideCamelCount(0);
+    setHideCowCount(0);
+    setHideGoatCount(0);
+
+    // log activity
+    logActivity('info' as any, `کھالیں وصولی: ${newCollection.donorName} کی جانب سے چرم قربانی کا عطیہ وصول ہوا (اونٹ: ${newCollection.camelCount}، گائے: ${newCollection.cowCount}، بکرا: ${newCollection.goatCount})`);
+
+    // set printable modal
+    setActiveHideSlip(newCollection);
+  };
+
+  // Delete hides record with counter password confirmation
+  const deleteHideCollection = (id: string) => {
+    const code = window.prompt("چرم کا ریکارڈ حذف کرنے کے لیے برانچ کا سیکیورٹی پاس ورڈ درج کریں:");
+    const activeBranchObj = branches.find(b => b.id === activeBranch);
+    if (code === '9211' || (activeBranchObj && code === activeBranchObj.password)) {
+      const targetHide = hides.find(h => h.id === id);
+      const updated = hides.filter(h => h.id !== id);
+      setHides(updated);
+      logActivity('info' as any, `چرم ریکارڈ حذف: سلپ ID #${id} (${targetHide?.donorName || ''}) کا ڈیٹا خارج کر دیا گیا`);
+    } else {
+      alert("غلط پاس ورڈ! سیکیورٹی بوجہ سیکیورٹی تبدیلیاں مسترد کی گئیں۔");
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem(`qurbani_data_v4_${activeYear}`, JSON.stringify(animals));
     broadcastSync(animals, deposits, activityLogs);
@@ -554,6 +714,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(`qurbani_global_share_amount_v5_${activeYear}`, globalShareAmount.toString());
   }, [globalShareAmount, activeYear]);
+
+  useEffect(() => {
+    localStorage.setItem(`qurbani_hides_v1_${activeYear}`, JSON.stringify(hides));
+    broadcastSync(animals, deposits, activityLogs, branches, activeYear, hides, wageRates);
+  }, [hides, activeYear]);
+
+  useEffect(() => {
+    localStorage.setItem(`qurbani_wage_rates_v1_${activeYear}`, JSON.stringify(wageRates));
+    broadcastSync(animals, deposits, activityLogs, branches, activeYear, hides, wageRates);
+  }, [wageRates, activeYear]);
 
   useEffect(() => {
     localStorage.setItem('qurbani_years_list_v1', JSON.stringify(years));
@@ -577,7 +747,7 @@ export default function App() {
     try {
       const channel = new BroadcastChannel('qurbani_realtime_sync');
       channel.onmessage = (event) => {
-        const { animals: incomingAnimals, deposits: incomingDeposits, logs: incomingLogs, branches: incomingBranches, year: incomingYear } = event.data;
+        const { animals: incomingAnimals, deposits: incomingDeposits, logs: incomingLogs, branches: incomingBranches, year: incomingYear, hides: incomingHides, wageRates: incomingWageRates } = event.data;
         if (incomingYear && incomingYear !== activeYear) {
           changeYear(incomingYear);
           return;
@@ -594,6 +764,12 @@ export default function App() {
         if (incomingBranches && JSON.stringify(incomingBranches) !== localStorage.getItem('qurbani_branches_v6')) {
           setBranches(incomingBranches);
         }
+        if (incomingHides && JSON.stringify(incomingHides) !== localStorage.getItem(`qurbani_hides_v1_${activeYear}`)) {
+          setHides(incomingHides);
+        }
+        if (incomingWageRates && JSON.stringify(incomingWageRates) !== localStorage.getItem(`qurbani_wage_rates_v1_${activeYear}`)) {
+          setWageRates(incomingWageRates);
+        }
       };
       return () => {
         channel.close();
@@ -601,7 +777,7 @@ export default function App() {
     } catch (e) {
       console.warn('Broadcast channel listener failed', e);
     }
-  }, [branches, activeYear]);
+  }, [branches, activeYear, hides, wageRates]);
 
   // Suggested ID is the first missing ID or next max number
   const suggestedNextId = useMemo(() => {
@@ -1756,6 +1932,63 @@ export default function App() {
     return list;
   }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort]);
 
+  // Hides Collections summaries
+  const hidesStats = useMemo(() => {
+    let camel = 0;
+    let cow = 0;
+    let goat = 0;
+    const currentYrHides = hides.filter(h => h.year === activeYear);
+    currentYrHides.forEach(h => {
+      camel += (h.camelCount || 0);
+      cow += (h.cowCount || 0);
+      goat += (h.goatCount || 0);
+    });
+    return {
+      camel,
+      cow,
+      goat,
+      total: camel + cow + goat
+    };
+  }, [hides, activeYear]);
+
+  // Employee / Nazim compensation ledger & payroll sheet
+  const hidesPayroll = useMemo(() => {
+    // Group hides counts by branch/worker
+    const branchStats: { [branchId: string]: { camel: number; cow: number; goat: number; total: number } } = {};
+    branches.forEach(b => {
+      branchStats[b.id] = { camel: 0, cow: 0, goat: 0, total: 0 };
+    });
+
+    hides.filter(h => h.year === activeYear).forEach(h => {
+      const bId = h.collectedByBranchId;
+      if (!branchStats[bId]) {
+        branchStats[bId] = { camel: 0, cow: 0, goat: 0, total: 0 };
+      }
+      branchStats[bId].camel += h.camelCount || 0;
+      branchStats[bId].cow += h.cowCount || 0;
+      branchStats[bId].goat += h.goatCount || 0;
+      branchStats[bId].total += (h.camelCount || 0) + (h.cowCount || 0) + (h.goatCount || 0);
+    });
+
+    return branches.map(b => {
+      const stats = branchStats[b.id] || { camel: 0, cow: 0, goat: 0, total: 0 };
+      const dutyDays = wageRates.workerDutyDays[b.id] ?? 3; // default 3 days
+      const hideCommission = (stats.camel * wageRates.camelRate) + 
+                             (stats.cow * wageRates.cowRate) + 
+                             (stats.goat * wageRates.goatRate);
+      const dailyWages = dutyDays * wageRates.dailyRate;
+      const netPayable = hideCommission + dailyWages;
+      return {
+        branch: b,
+        stats,
+        dutyDays,
+        hideCommission,
+        dailyWages,
+        netPayable
+      };
+    });
+  }, [branches, hides, wageRates, activeYear]);
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const branchToAuth = branches.find(b => b.id === pendingActiveBranch);
@@ -1926,6 +2159,28 @@ export default function App() {
           </div>
           <h1 className="text-xl font-bold tracking-tight text-emerald-50 hidden lg:block">اجتماعی قربانی مینیجر</h1>
         </div>
+
+        <div className="px-4 py-3 border-b border-emerald-900/40 hidden lg:block space-y-1.5 bg-emerald-950/20">
+          <span className="text-[10px] text-emerald-400 font-bold block uppercase tracking-wider">مہم کا انتخاب کریں:</span>
+          <div className="grid grid-cols-2 bg-emerald-900/60 rounded-xl p-1 border border-emerald-800/20">
+            <button 
+              onClick={() => {
+                setView('dashboard');
+              }}
+              className={`py-1.5 text-xs font-black rounded-lg transition-all ${view !== 'hides' ? 'bg-emerald-600 text-white shadow font-semibold' : 'text-emerald-300 hover:text-white'}`}
+            >
+              حصصِ قربانی
+            </button>
+            <button 
+              onClick={() => {
+                setView('hides');
+              }}
+              className={`py-1.5 text-xs font-black rounded-lg transition-all ${view === 'hides' ? 'bg-emerald-600 text-white shadow font-semibold' : 'text-emerald-300 hover:text-white'}`}
+            >
+              چرم قربانی
+            </button>
+          </div>
+        </div>
         
         <nav className="flex-1 p-3 space-y-1">
           <button 
@@ -1977,6 +2232,14 @@ export default function App() {
           </button>
 
           <button 
+            onClick={() => setView('hides')}
+            className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'hides' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+          >
+            <Briefcase size={22} />
+            <span className="hidden lg:block text-sm">چرم قربانی</span>
+          </button>
+
+          <button 
             onClick={() => setView('settings')}
             className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'settings' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
           >
@@ -2023,6 +2286,7 @@ export default function App() {
                     : view === 'tags' ? 'قربانی جانوروں کے ٹیگ پرنٹ'
                     : view === 'records' ? 'کھاتہ داران ڈیٹا ریکارڈ لسٹ'
                     : view === 'ledger' ? 'جنرل کاؤنٹر لیجر وصولی رپورٹ'
+                    : view === 'hides' ? 'چرم قربانی (کھال وصولی و ملازمین حساب)'
                     : selectedAnimal?.label}
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
                     {activeBranchLabel}
@@ -2185,16 +2449,18 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Center-wise Cumulative Report in List and Columns format */}
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                {/* Redesigned Branch Ledger Card Deck (شاخ وار مجموعی رپورٹ) */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8 space-y-6">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-4 gap-2">
                     <div className="space-y-1">
-                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                        <Building size={22} className="text-emerald-600 shrink-0" />
-                        شاخ وار مجموعی رپورٹ (مراکزِ قربانی کا گرانڈ میزانیہ)
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 bg-emerald-600 rounded-full animate-pulse"></span>
+                        <h3 className="text-lg font-black text-slate-900 font-sans tracking-tight">
+                          شاخ وار مجموعی رپورٹ (مراکزِ قربانی کا گرانڈ میزانیہ)
+                        </h3>
+                      </div>
                       <p className="text-slate-500 text-[11px] font-bold">
-                        مختلف ذیلی مراکزِ جامعہ کی مجموعی پیش رفت، کل کارکردگی اور مجموعی فنڈز کی ریکارڈ لسٹ
+                        ذیلی برانچز اور ان کے متعلقہ انتظامی ناظمین کی کل وصولی، فیصد پیش رفت اور فنڈز کا خلاصه
                       </p>
                     </div>
                     <span className="text-[10px] bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl border border-emerald-100 shrink-0">
@@ -2202,81 +2468,76 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-right border-collapse">
-                      <thead>
-                        <tr className="border-b-2 border-slate-900 text-slate-600 font-black text-[11px] bg-slate-50">
-                          <th className="py-3 px-4 text-right font-black">قربانی مرکز (شاخِ جامعہ)</th>
-                          <th className="py-3 px-4 text-right font-black">نگرانِ مرکز (ناظم صاحب)</th>
-                          <th className="py-3 px-4 text-center font-black">بک شدہ کُل حصے</th>
-                          <th className="py-3 px-4 text-center font-black w-1/4">پیش رفتِ بکنگ (فیصد)</th>
-                          <th className="py-3 px-4 text-left font-black">وصول شدہ کل فنڈز</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {centerSupervisors.map((supervisor) => {
-                          const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
-                          // Potential parts across all 60 cows (60 cows * 7 shares/cow = 420 shares total possible overall)
-                          const totalPossibleShares = animals.length * SHARES_PER_ANIMAL;
-                          const percentage = totalPossibleShares > 0 
-                            ? Math.round((cTotal.count / totalPossibleShares) * 100) 
-                            : 0;
+                  {/* Multi-Column List Format */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {centerSupervisors.map((supervisor) => {
+                      const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
+                      const totalPossibleShares = animals.length * SHARES_PER_ANIMAL;
+                      const percentage = totalPossibleShares > 0 
+                        ? Math.round((cTotal.count / totalPossibleShares) * 100) 
+                        : 0;
 
-                          return (
-                            <tr key={supervisor.centerId} className="hover:bg-slate-50/80 transition-all font-sans">
-                              {/* 1. Center Name */}
-                              <td className="py-4 px-4 font-black text-slate-900 text-sm">
-                                <span className="flex items-center gap-2">
-                                  <span className={`w-3 h-3 rounded-full ${supervisor.color || 'bg-slate-400'} border border-slate-950/20 shrink-0`}></span>
-                                  {supervisor.centerLabel || 'مرکزی مقام'}
-                                </span>
-                              </td>
+                      return (
+                        <div 
+                          key={supervisor.centerId} 
+                          className="bg-slate-50/50 hover:bg-slate-50 border border-slate-100 hover:border-slate-200/80 rounded-2xl p-5 transition-all flex flex-col justify-between gap-4"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className={`w-3.5 h-3.5 rounded-xl ${supervisor.color || 'bg-emerald-600'} border-2 border-white shadow-sm shrink-0`}></span>
+                              <div>
+                                <h4 className="font-extrabold text-slate-950 text-sm">{supervisor.centerLabel || 'مرکزی مقام'}</h4>
+                                <span className="text-[11px] text-slate-500 font-bold block">انتظامی ناظم: {supervisor.label}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">وصول شدہ فنڈز</span>
+                              <strong className="text-emerald-700 font-black font-mono text-base">{cTotal.amount.toLocaleString('ur-PK')}<span className="text-[10px] font-bold font-sans"> روپے</span></strong>
+                            </div>
+                          </div>
 
-                              {/* 2. Supervisor */}
-                              <td className="py-4 px-4 font-bold text-slate-700">
-                                {supervisor.label}
-                              </td>
+                          <div className="space-y-1.5 pt-2 border-t border-slate-150/50">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-500 font-bold">بک شدہ حصے:</span>
+                              <span className="font-black text-slate-800 font-mono text-xs">{cTotal.count} / {totalPossibleShares} <span className="text-[10px] font-sans font-normal text-slate-400">حصہ دار</span></span>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 bg-slate-250 h-2 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${supervisor.color || 'bg-emerald-600'} rounded-full transition-all duration-500`}
+                                  style={{ width: `${Math.min(100, percentage)}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-[11px] font-mono font-black text-slate-700 shrink-0">{percentage}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-                              {/* 3. Booked Shares */}
-                              <td className="py-4 px-4 text-center font-extrabold font-mono text-slate-800 text-sm">
-                                {cTotal.count} <span className="text-[10px] text-slate-400 font-sans font-normal">حصے</span>
-                              </td>
-
-                              {/* 4. Progress bar */}
-                              <td className="py-4 px-4 text-center">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
-                                    <div 
-                                      className={`h-full ${supervisor.color || 'bg-emerald-600'} rounded-full transition-all duration-500`}
-                                      style={{ width: `${Math.min(100, percentage)}%` }}
-                                    ></div>
-                                  </div>
-                                  <span className="text-[10px] font-mono font-black text-slate-600 shrink-0">{percentage}%</span>
-                                </div>
-                              </td>
-
-                              {/* 5. Total Funds Received */}
-                              <td className="py-4 px-4 text-left font-black font-mono text-emerald-800 text-sm">
-                                {cTotal.amount.toLocaleString('ur-PK')} <span className="text-[10px] font-sans font-bold text-slate-500">روپے</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-slate-950 bg-slate-100/50 font-black">
-                          <td colSpan={2} className="py-3.5 px-4 font-extrabold text-slate-900 text-sm">کُل ملا کر مجموعی میزانیہ:</td>
-                          <td className="py-3.5 px-4 text-center font-black font-mono text-slate-850 text-sm">
-                            {grandTotalCount} <span className="text-[10px] text-slate-400 font-sans font-normal">اصحابِ حصص</span>
-                          </td>
-                          <td className="py-3.5 px-4"></td>
-                          <td className="py-3.5 px-4 text-left font-black font-mono text-emerald-950 text-base">
-                            {grandTotalAmount.toLocaleString('ur-PK')}{' '}
-                            <span className="text-xs font-sans font-extrabold text-slate-600">روپے</span>
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                  {/* Grand consolidated bottom row */}
+                  <div className="bg-slate-900 text-white rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm border border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-base">∑</div>
+                      <div>
+                        <strong className="text-slate-200 font-extrabold text-sm block">کُل ملا کر مجموعی گرانڈ رپورٹ:</strong>
+                        <span className="text-[10px] text-slate-400 font-bold block">تمام ذیلی کاؤنٹرز و شاخوں کا یکجا میزان</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-8 font-sans">
+                      <div className="text-center sm:text-right">
+                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک حصے:</span>
+                        <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalCount} <span className="text-xs font-normal font-sans">افراد</span></strong>
+                      </div>
+                      <div className="w-px h-8 bg-slate-800"></div>
+                      <div className="text-center sm:text-left">
+                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5 font-sans">وصول شدہ کل فنڈز:</span>
+                        <strong className="text-emerald-400 font-black text-lg font-mono leading-none">{grandTotalAmount.toLocaleString('ur-PK')} <span className="text-xs font-normal font-sans">روپے</span></strong>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -2925,6 +3186,481 @@ export default function App() {
                     <p className="text-blue-700/80 text-xs leading-relaxed">
                       جب کوئی حصہ دار رقم جمع کروائے، تو اس کے "رقم وصول" بٹن پر کلک کریں۔ سائیڈ میں "توقعِ فراہمیِ گوشت کا وقت" (مثلاً صبح 11:30 بجے) درج ضرور کریں، پھر **رسید جاری کریں** کے بٹن پر دبا کر انھیں باضابطہ ڈیجیٹل سلپ/رسیپٹ پیش کریں۔
                     </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Hides Collection & supervisor reward system view */}
+            {view === 'hides' && (
+              <motion.div
+                key="hides"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="max-w-5xl mx-auto space-y-8 pb-32"
+              >
+                {/* Visual Header with Realtime status */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[10px] bg-amber-50 text-amber-900 border border-amber-200/50 px-2.5 py-1 rounded-lg font-black tracking-wider uppercase font-sans">چرم قربانی انتظام</span>
+                    <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 mt-1 font-sans">
+                      <Briefcase className="text-emerald-600" size={24} />
+                      کھالیں جمع آوری مہم و پے رول انتظام
+                    </h3>
+                    <p className="text-slate-500 text-xs">
+                      یہاں چرم قربانی کی وصولی، رسید جاری کرنا، اور نگرانِ شعبہ کا انعام و اجرت ریکارڈ سنک منظم کریں۔
+                    </p>
+                  </div>
+                  <div className="bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-2xl px-4 py-3 text-right flex flex-col justify-center min-w-[170px]">
+                    <span className="text-[10px] text-emerald-605 font-bold block mb-0.5">کُل وصول شدہ کھالیں:</span>
+                    <strong className="text-lg font-black font-mono leading-none">{hidesStats.total} <span className="text-xs font-bold font-sans">عدد</span></strong>
+                  </div>
+                </div>
+
+                {/* Hides Stat Counters Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center font-bold">اونٹ</div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">اونٹ کھالیں</span>
+                      <strong className="text-slate-800 font-mono text-base font-black">{hidesStats.camel}</strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center font-bold">گائے</div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">گائے/بیل کھالیں</span>
+                      <strong className="text-slate-800 font-mono text-base font-black">{hidesStats.cow}</strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-50 text-emerald-700 rounded-xl flex items-center justify-center font-bold">بکری</div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">بھیڑ/بکرا/دنبہ</span>
+                      <strong className="text-slate-800 font-mono text-base font-black">{hidesStats.goat}</strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 rounded-2xl p-4 text-white flex items-center gap-3">
+                    <div className="w-10 h-10 bg-slate-800 text-amber-400 rounded-xl flex items-center justify-center font-bold">∑</div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">کُل میزان</span>
+                      <strong className="text-white font-mono text-base font-black">{hidesStats.total} <span className="text-[10px] font-sans">کھالیں</span></strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main Action Workspaces */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Hide Collection Entry Form (Col Span 5) */}
+                  <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200 p-6 space-y-5">
+                    <h4 className="font-extrabold text-slate-800 text-sm border-b border-slate-100 pb-3 flex items-center gap-2">
+                      <Plus size={18} className="text-emerald-600" />
+                      نئی چرم قربانی وصولی کا اندراج
+                    </h4>
+
+                    <div className="space-y-4">
+                      {/* Donor Name */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600">عطیہ کنندہ کا نام:</label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً محمد اختر صاحب"
+                          value={hideDonorName}
+                          onChange={(e) => setHideDonorName(e.target.value)}
+                          className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold font-sans"
+                        />
+                      </div>
+
+                      {/* Donor Phone */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600">رابطہ فون نمبر (اختیاری):</label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً 03001234567"
+                          value={hideDonorPhone}
+                          onChange={(e) => setHideDonorPhone(e.target.value)}
+                          className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono"
+                        />
+                      </div>
+
+                      {/* Donor Address */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600">پتہ مع علاقہ (اختیاری):</label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً مکان نمبر ۴، گلی ۲، کورنگی"
+                          value={hideDonorAddress}
+                          onChange={(e) => setHideDonorAddress(e.target.value)}
+                          className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold"
+                        />
+                      </div>
+
+                      {/* Hide quantities select */}
+                      <div className="bg-slate-50 border border-slate-200/50 rounded-2xl p-4 space-y-3.5">
+                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-black block border-b border-slate-200/60 pb-1.5">کھالوں کی اقسام اور تعداد منتخب کرییں</span>
+                        
+                        {/* Camel */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700">۱. اونٹ کی کھال:</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHideCamelCount(prev => Math.max(0, prev - 1))}
+                              className="w-7 h-7 bg-white hover:bg-slate-100 border border-slate-250 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-mono font-black text-slate-800 w-8 text-center">{hideCamelCount}</span>
+                            <button
+                              type="button"
+                              onClick={() => setHideCamelCount(prev => prev + 1)}
+                              className="w-7 h-7 bg-white hover:bg-slate-100 border border-slate-250 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Cow */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700">۲. گائے / بیل کی کھال:</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHideCowCount(prev => Math.max(0, prev - 1))}
+                              className="w-7 h-7 bg-white hover:bg-slate-100 border border-slate-250 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-mono font-black text-slate-800 w-8 text-center">{hideCowCount}</span>
+                            <button
+                              type="button"
+                              onClick={() => setHideCowCount(prev => prev + 1)}
+                              className="w-7 h-7 bg-white hover:bg-slate-100 border border-slate-250 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Goat */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700">۳. بھیڑ / بکری / دنبہ:</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHideGoatCount(prev => Math.max(0, prev - 1))}
+                              className="w-7 h-7 bg-white hover:bg-slate-100 border border-slate-250 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-mono font-black text-slate-800 w-8 text-center">{hideGoatCount}</span>
+                            <button
+                              type="button"
+                              onClick={() => setHideGoatCount(prev => prev + 1)}
+                              className="w-7 h-7 bg-white hover:bg-slate-100 border border-slate-250 rounded-lg font-bold text-xs flex items-center justify-center shrink-0"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={submitHideCollection}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white py-3 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-emerald-600/10"
+                      >
+                        <Receipt size={16} /> چرم وصول کریں اور چرمی چلان پرنٹ کریں
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Hide Collection History List (Col Span 7) */}
+                  <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200 p-6 space-y-4">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                        <History size={18} className="text-slate-400" />
+                        وصول شدہ کھالیں ریکارڈ لسٹ
+                      </h4>
+                      <div className="flex gap-2">
+                        {/* Branch filter */}
+                        <select
+                          value={hidesBranchFilter}
+                          onChange={(e) => setHidesBranchFilter(e.target.value)}
+                          className="text-[10px] px-2 py-1 rounded bg-slate-100 border border-slate-200 font-bold focus:outline-none"
+                        >
+                          <option value="all">تمام کاؤنٹرز</option>
+                          {branches.map(b => (
+                            <option key={b.id} value={b.id}>{b.label} ({b.centerLabel})</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Search bar */}
+                    <div className="relative">
+                      <Search className="absolute right-3 top-2.5 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        placeholder="عطیہ کنندہ نام، فون یا سلپ ID سے تلاش کریں..."
+                        value={hidesSearchQuery}
+                        onChange={(e) => setHidesSearchQuery(e.target.value)}
+                        className="w-full text-xs pr-9 pl-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold font-sans"
+                      />
+                    </div>
+
+                    {/* Scrollable list container */}
+                    <div className="overflow-y-auto max-h-[440px] space-y-3 pr-1">
+                      {hides
+                        .filter(h => h.year === activeYear)
+                        .filter(h => {
+                          if (hidesBranchFilter !== 'all' && h.collectedByBranchId !== hidesBranchFilter) return false;
+                          if (!hidesSearchQuery) return true;
+                          const q = hidesSearchQuery.toLowerCase();
+                          return h.id.toLowerCase().includes(q) || 
+                                 h.donorName.toLowerCase().includes(q) || 
+                                 (h.donorPhone && h.donorPhone.includes(q));
+                        })
+                        .map((h) => {
+                          const matchesBranch = branches.find(b => b.id === h.collectedByBranchId);
+                          return (
+                            <div key={h.id} className="bg-slate-50 border border-slate-200/60 rounded-xl p-3.5 space-y-3 hover:bg-slate-100/40 transition-all font-sans">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-lg border border-emerald-200/50 font-black font-mono">ID: {h.id}</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">{h.date}</span>
+                                </div>
+                                <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full ${matchesBranch?.color || 'bg-slate-100'} border border-slate-950/10`}>
+                                  {h.collectedByBranchLabel || 'کاؤنٹر'}
+                                </span>
+                              </div>
+
+                              <div className="flex justify-between items-center bg-white border border-slate-150 rounded-xl p-2">
+                                <span className="text-xs font-black text-slate-800">{h.donorName}</span>
+                                <div className="flex gap-2">
+                                  {h.camelCount > 0 && <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200/60 px-2 py-0.5 rounded font-bold font-sans">اونٹ: {h.camelCount}</span>}
+                                  {h.cowCount > 0 && <span className="text-[10px] bg-blue-50 text-blue-800 border border-blue-200/60 px-2 py-0.5 rounded font-bold font-sans">گائے: {h.cowCount}</span>}
+                                  {h.goatCount > 0 && <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200/60 px-2 py-0.5 rounded font-bold font-sans">بکری: {h.goatCount}</span>}
+                                </div>
+                              </div>
+
+                              <div className="flex justify-between items-center text-[10px] pt-1">
+                                <span className="text-slate-400 font-bold">{h.donorPhone || 'فون نمبر فراہم نہیں کیا گیا'}</span>
+                                <div className="flex gap-2">
+                                  {/* Reprint receipt */}
+                                  <button
+                                    onClick={() => setActiveHideSlip(h)}
+                                    className="text-emerald-700 hover:text-emerald-800 font-bold px-2 py-1 rounded bg-white border border-slate-250 hover:bg-slate-50 font-sans"
+                                  >
+                                    رسیپٹ پرنٹ کریں
+                                  </button>
+                                  {/* Delete slip */}
+                                  <button
+                                    onClick={() => deleteHideCollection(h.id)}
+                                    className="text-rose-600 hover:text-rose-700 font-bold p-1 rounded hover:bg-rose-50 border border-rose-100"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                      {hides.filter(h => h.year === activeYear).length === 0 && (
+                        <p className="text-slate-400 text-center text-xs py-12">چرم مہم میں اب تک کوئی کھال وصول نہیں کی گئی ہے۔</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Supervisor Incentives and Super Admin Wages Configurations */}
+                <div className="bg-slate-900 text-white rounded-3xl border border-slate-850 p-6 space-y-6 shadow-xl">
+                  {/* Title banner */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-830 pb-4 gap-2">
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-black text-white flex items-center gap-2 font-sans">
+                        <Coins size={22} className="text-amber-400" />
+                        مرکزی ہیڈ کوارٹر پے رول شیٹ (کھالیں اجرت و انعام)
+                      </h3>
+                      <p className="text-slate-400 text-[11px] font-bold">
+                        رول سیکیورٹی ضوابط کے تحت صرف مرکزی سپر ایڈمن کھال کی قیمت اجرت اور فکسڈ ڈیلی ویج کا ریکارڈ درج اور ایڈٹ کرسکتا ہے۔
+                      </p>
+                    </div>
+                    {/* Role badge */}
+                    <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl border ${
+                      isNazim ? 'bg-amber-900/40 text-amber-300 border-amber-900/60' : 'bg-rose-900/40 text-rose-300 border-rose-900/50 animate-pulse'
+                    }`}>
+                      انتظامی اختیار: {isNazim ? 'ناظم - صرف مشاہدہ' : 'مرکزی سپر ایڈمن - کُل ایڈٹ بحال'}
+                    </span>
+                  </div>
+
+                  {/* Config Block: editable ONLY by super admin (isNazim is false means it's super admin) */}
+                  <div className="bg-slate-850 rounded-2xl p-5 grid grid-cols-2 md:grid-cols-4 gap-4 border border-slate-800">
+                    {/* Camel hide wages rate */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">اونٹ کھال انعام ریٹ (فی عدد):</span>
+                      <input
+                        type="number"
+                        disabled={isNazim}
+                        value={wageRates.camelRate}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setWageRates(prev => ({ ...prev, camelRate: val }));
+                        }}
+                        className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
+                      />
+                    </div>
+
+                    {/* Cow hide reward rate */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">گائے کھال انعام ریٹ (فی عدد):</span>
+                      <input
+                        type="number"
+                        disabled={isNazim}
+                        value={wageRates.cowRate}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setWageRates(prev => ({ ...prev, cowRate: val }));
+                        }}
+                        className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
+                      />
+                    </div>
+
+                    {/* Goat hide reward rate */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">بکری کھال انعام ریٹ (فی عدد):</span>
+                      <input
+                        type="number"
+                        disabled={isNazim}
+                        value={wageRates.goatRate}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setWageRates(prev => ({ ...prev, goatRate: val }));
+                        }}
+                        className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
+                      />
+                    </div>
+
+                    {/* Daily base wage worker rate */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 block pb-1">یومیہ مقررہ بیرونی اجرت (روپے):</span>
+                      <input
+                        type="number"
+                        disabled={isNazim}
+                        value={wageRates.dailyRate}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          setWageRates(prev => ({ ...prev, dailyRate: val }));
+                        }}
+                        className="w-full bg-slate-800 text-white font-mono text-center px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-amber-400 disabled:opacity-50 text-xs font-black"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Calculations Cumulative Payroll sheet table */}
+                  <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-850">
+                    <table className="w-full text-xs text-right border-collapse">
+                      <thead>
+                        <tr className="bg-slate-800 border-b border-slate-700 text-slate-350 leading-relaxed font-black">
+                          <th className="py-3 px-4 text-right">قربانی کاؤنٹر / ملازم</th>
+                          <th className="py-3 px-4 text-center">خدمت گزار</th>
+                          <th className="py-3 px-4 text-center">وصول کھالیں</th>
+                          <th className="py-3 px-4 text-center">ایام ڈیوٹی</th>
+                          <th className="py-3 px-4 text-center">کھال انعام رقم</th>
+                          <th className="py-3 px-4 text-center">یومیہ اجرت فکسڈ</th>
+                          <th className="py-3 px-4 text-left">کُل واجب الادا</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300 font-sans">
+                        {hidesPayroll.map((item) => {
+                          if (item.branch.id === 'hq') return null; // HQ represents central office, excluding from payroll
+                          return (
+                            <tr key={item.branch.id} className="hover:bg-slate-820 transition-all">
+                              {/* Branch label */}
+                              <td className="py-3.5 px-4 font-black text-slate-100 font-sans">
+                                {item.branch.centerLabel || 'مرکز'} — <span className="text-slate-400 text-[10px]">{item.branch.label}</span>
+                              </td>
+                              
+                              {/* Supervisor title */}
+                              <td className="py-3.5 px-4 text-center font-bold text-slate-400">
+                                {item.branch.role === 'nazim' ? 'ناظم علاقہ' : 'ماتحت قاری'}
+                              </td>
+
+                              {/* Hides count split */}
+                              <td className="py-3.5 px-4 text-center font-mono font-black text-slate-200">
+                                <span className="text-slate-200">{item.stats.total} </span>
+                                <span className="text-[9px] text-slate-500 font-normal">
+                                  ({item.stats.camel}O, {item.stats.cow}C, {item.stats.goat}G)
+                                </span>
+                              </td>
+
+                              {/* Duty Days editable */}
+                              <td className="py-3.5 px-4 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      if (isNazim) return;
+                                      const cur = wageRates.workerDutyDays[item.branch.id] ?? 3;
+                                      setWageRates(prev => ({
+                                        ...prev,
+                                        workerDutyDays: { ...prev.workerDutyDays, [item.branch.id]: Math.max(0, cur - 1) }
+                                      }));
+                                    }}
+                                    disabled={isNazim}
+                                    className="w-5 h-5 bg-slate-800 disabled:opacity-40 hover:bg-slate-700 rounded text-center flex items-center justify-center font-bold text-[10px]"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="text-xs font-mono font-black text-slate-100">{item.dutyDays} دن</span>
+                                  <button
+                                    onClick={() => {
+                                      if (isNazim) return;
+                                      const cur = wageRates.workerDutyDays[item.branch.id] ?? 3;
+                                      setWageRates(prev => ({
+                                        ...prev,
+                                        workerDutyDays: { ...prev.workerDutyDays, [item.branch.id]: cur + 1 }
+                                      }));
+                                    }}
+                                    disabled={isNazim}
+                                    className="w-5 h-5 bg-slate-800 disabled:opacity-40 hover:bg-slate-700 rounded text-center flex items-center justify-center font-bold text-[10px]"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Hide Commission amount */}
+                              <td className="py-3.5 px-4 text-center font-mono font-bold text-amber-400">
+                                {item.hideCommission.toLocaleString('ur-PK')} <span className="text-[9px] font-sans">روپے</span>
+                              </td>
+
+                              {/* Daily standard wages */}
+                              <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">
+                                {item.dailyWages.toLocaleString('ur-PK')} <span className="text-[9px] font-sans">روپے</span>
+                              </td>
+
+                              {/* Net payable sum */}
+                              <td className="py-3.5 px-4 text-left font-black font-mono text-emerald-400 text-sm">
+                                {item.netPayable.toLocaleString('ur-PK')}{' '}
+                                <span className="text-[10px] font-bold font-sans">روپے</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="bg-slate-850/50 p-4 rounded-2xl flex items-center gap-3 border border-slate-800 text-center justify-center text-xs">
+                    <Info size={14} className="text-amber-500 animate-pulse" />
+                    <span className="text-slate-400 leading-relaxed font-bold">
+                      ایام ڈیوٹی میں تبدیلی اور انعام ریٹ کی سیکیورٹی تبدیلیاں براہ راست لائیو سنکرونائزیشن کے تحت دوسرے کمپیوٹرز پر بھی منعکس ہوتی ہیں۔
+                    </span>
                   </div>
                 </div>
               </motion.div>
@@ -4109,6 +4845,127 @@ export default function App() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Dynamic Hides Printable slip Modal Overlay */}
+        {activeHideSlip && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative flex flex-col justify-between"
+            >
+              {/* Slip Layout to show printable format */}
+              <div id="printable-hide-area" dir="rtl" className="border-4 border-double border-emerald-950/30 p-6 rounded-xl space-y-4 text-right bg-white" style={{ direction: 'rtl', textAlign: 'right' }}>
+                <div className="text-center border-b border-slate-200 pb-3">
+                  <Briefcase className="mx-auto text-emerald-700 mb-1" size={32} />
+                  <h3 className="text-xl font-black text-slate-900 font-sans">چرمِ قربانی جامعہ اشرف المدارس کراچی</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 font-sans">Sacrificial Hide Collections Receipt</p>
+                </div>
+
+                <div className="flex justify-between items-center text-xs text-slate-500 font-bold" dir="rtl" style={{ direction: 'rtl' }}>
+                  <span>سلپ نمبر: {activeHideSlip.id}</span>
+                  <span>تاریخ/وقت: {activeHideSlip.date}</span>
+                </div>
+
+                <div className="space-y-2.5 text-sm pt-2">
+                  <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                    <span className="text-slate-400 font-bold">بذریعہ شاخ / کاؤنٹر:</span>
+                    <strong className="text-slate-800">{activeHideSlip.collectedByBranchLabel}</strong>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                    <span className="text-slate-400 font-bold font-bold font-sans">عطیہ کنندہ کا نام:</span>
+                    <strong className="text-emerald-700 text-base">{activeHideSlip.donorName || '---'}</strong>
+                  </div>
+                  {activeHideSlip.donorPhone && (
+                    <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-400 font-bold">فون نمبر / رابطہ:</span>
+                      <strong className="text-slate-800 font-mono">{activeHideSlip.donorPhone}</strong>
+                    </div>
+                  )}
+                  {activeHideSlip.donorAddress && (
+                    <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                      <span className="text-slate-400 font-bold font-bold font-sans">پتہ تلاش:</span>
+                      <strong className="text-slate-800">{activeHideSlip.donorAddress}</strong>
+                    </div>
+                  )}
+
+                  {/* Received quantities table */}
+                  <div className="mt-4 border border-slate-150 rounded-xl overflow-hidden bg-slate-50/50">
+                    <div className="bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-705 text-center border-b border-slate-150 font-sans">وصول شدہ چرم تفصیل</div>
+                    <div className="divide-y divide-slate-105 text-xs">
+                      {activeHideSlip.camelCount > 0 && (
+                        <div className="flex justify-between px-3 py-2 font-bold">
+                          <span className="text-slate-600">اونٹ کی کھال:</span>
+                          <span className="text-slate-900 font-extrabold">{activeHideSlip.camelCount} عدد</span>
+                        </div>
+                      )}
+                      {activeHideSlip.cowCount > 0 && (
+                        <div className="flex justify-between px-3 py-2 font-bold">
+                          <span className="text-slate-600">گائے / بیل کی کھال:</span>
+                          <span className="text-slate-900 font-extrabold">{activeHideSlip.cowCount} عدد</span>
+                        </div>
+                      )}
+                      {activeHideSlip.goatCount > 0 && (
+                        <div className="flex justify-between px-3 py-2 font-bold">
+                          <span className="text-slate-600">بھیڑ / بکرا / دنبہ کی کھال:</span>
+                          <span className="text-slate-900 font-extrabold">{activeHideSlip.goatCount} عدد</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between pt-1 font-bold text-xs text-slate-500">
+                    <span>مذکورہ کھالیں رضاکارانہ طور پر برائے صدقاتِ مدارس جمع کر لی گئی ہیں۔</span>
+                  </div>
+                </div>
+
+                {/* Footnotes instruction */}
+                <div className="bg-emerald-50 text-emerald-900 p-3 rounded-xl text-center text-[10px] leading-relaxed mt-4 font-bold select-none">
+                  جزاک اللہ! کھال کی کوئی قیمت فروخت یا فیس وصولی نہیں ہوتی۔ لوگ فلاحی و تعلیمی معاونت کے لیے مدارس میں بخوشی جمع کرواتے ہیں۔
+                </div>
+
+                <div className="flex justify-between items-end pt-6 text-[10px] text-slate-400 font-bold font-sans">
+                  <div className="text-center min-w-[124px]">
+                    <span className="block text-black font-black text-sm mb-1" style={{ color: '#000000', fontWeight: '950' }}>
+                      {activeHideSlip.collectedByBranchLabel}
+                    </span>
+                    <span className="block border-t border-slate-200 w-full text-center mt-2 pt-1 font-bold text-slate-500">دستخط نمائندہ جامعہ</span>
+                  </div>
+                  <div className="italic text-slate-400 font-bold font-sans">
+                    اجتماعی قربانی مہم 2026
+                  </div>
+                </div>
+              </div>
+
+              {/* Action utilities */}
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={() => {
+                    const printContents = document.getElementById('printable-hide-area')?.innerHTML;
+                    if (printContents) {
+                      const originalContents = document.body.innerHTML;
+                      document.body.innerHTML = printContents;
+                      window.print();
+                      window.location.reload();
+                    }
+                  }}
+                  className="flex-1 bg-emerald-600 text-white font-extrabold py-3 rounded-xl text-xs transition-all hover:bg-emerald-700 flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                >
+                  <Printer size={16} /> Print Receipt (رسید نکالیں)
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveHideSlip(null);
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold px-6 py-3 rounded-xl text-xs transition-all flex items-center justify-center cursor-pointer"
+                >
+                  بند کریں
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
