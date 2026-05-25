@@ -2046,6 +2046,17 @@ export default function App() {
               </span>
             </div>
 
+            <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-xl px-3 py-1.5 shadow-sm font-bold">
+              <Calendar size={14} className="text-indigo-500" />
+              <span className="text-[10px] text-indigo-400 block font-bold leading-none">سال:</span>
+              <span className="text-xs font-black text-indigo-950 font-mono leading-none">{activeYear}</span>
+            </div>
+
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-xl px-3 py-1.5">
+              <RotateCw className="text-emerald-500 animate-spin" size={14} />
+              <span className="text-[10px] font-bold">لائیو کلاؤڈ سنک فعال ہے</span>
+            </div>
+
             <button
               onClick={() => {
                 triggerConfirm(
@@ -2064,17 +2075,6 @@ export default function App() {
             >
               <LogOut size={14} /> لاگ آؤٹ
             </button>
-
-            <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-xl px-3 py-1.5 shadow-sm font-bold">
-              <Calendar size={14} className="text-indigo-500" />
-              <span className="text-[10px] text-indigo-400 block font-bold leading-none">سال:</span>
-              <span className="text-xs font-black text-indigo-950 font-mono leading-none">{activeYear}</span>
-            </div>
-
-            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-xl px-3 py-1.5">
-              <RotateCw className="text-emerald-500 animate-spin" size={14} />
-              <span className="text-[10px] font-bold">لائیو کلاؤڈ سنک فعال ہے</span>
-            </div>
           </div>
         </header>
 
@@ -2102,8 +2102,8 @@ export default function App() {
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                     <p className="text-emerald-600 text-xs font-bold mb-1">وصول شدہ کُل فنڈز</p>
                     <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-emerald-600">
-                        {stats.totalCashReceived.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal"> روپے</span>
+                      <h4 className="text-xl font-black text-emerald-600 font-mono">
+                        {stats.totalCashReceived.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
                       </h4>
                       <Coins className="text-emerald-100 shrink-0" size={32} />
                     </div>
@@ -2112,8 +2112,8 @@ export default function App() {
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                     <p className="text-blue-600 text-xs font-bold mb-1">بینک اکاؤنٹ میں منتقل</p>
                     <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-blue-600">
-                        {stats.bankDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal"> روپے</span>
+                      <h4 className="text-xl font-black text-blue-600 font-mono">
+                        {stats.bankDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
                       </h4>
                       <CreditCard className="text-blue-100 shrink-0" size={32} />
                     </div>
@@ -2122,8 +2122,8 @@ export default function App() {
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                     <p className="text-indigo-600 text-xs font-bold mb-1">مرکزی کاؤنٹر دراز والٹ</p>
                     <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-indigo-700">
-                        {stats.counterDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal"> روپے</span>
+                      <h4 className="text-xl font-black text-indigo-700 font-mono">
+                        {stats.counterDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
                       </h4>
                       <Briefcase className="text-indigo-100 shrink-0" size={32} />
                     </div>
@@ -2132,7 +2132,7 @@ export default function App() {
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                     <p className="text-orange-500 text-xs font-bold mb-1">کیش آف ہینڈ (غیر منتقل)</p>
                     <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-orange-600">
+                      <h4 className="text-xl font-black text-orange-600 font-mono">
                         {stats.cashOnHand.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal"> روپے</span>
                       </h4>
                       <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-500 font-extrabold text-[10px] shrink-0">{stats.paymentPercentage}%</div>
@@ -2168,112 +2168,117 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Synchronized Multi-branch Collections & Activities Feed with Light Green Background & Thick Black Border */}
-                  <div className="bg-[#E8F5E9] text-slate-900 rounded-2xl p-5 flex flex-col border-4 border-slate-950 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" dir="rtl">
-                    <div className="flex items-center justify-between border-b-2 border-slate-950 pb-2.5 mb-3 shrink-0">
-                      <div className="flex items-center gap-2">
-                        <Activity className="text-emerald-800 animate-pulse" size={18} />
-                        <span className="text-xs font-black tracking-wide text-slate-900 font-sans">کاؤنٹر وار وصولی رپورٹ (لائیو سنک)</span>
-                      </div>
-                      <span className="text-[9px] bg-emerald-800 text-white font-black px-2 py-0.5 rounded-full uppercase shrink-0">
-                        لائیو
-                      </span>
-                    </div>
-                    
-                    {/* Collections Summary Table */}
-                    <div className="space-y-2 mb-4">
-                      <div className="bg-white/90 rounded-xl p-3 border-2 border-slate-950">
-                        <table className="w-full text-xs text-right">
-                          <thead>
-                            <tr className="border-b-2 border-slate-900 text-slate-600 font-black text-[10px]">
-                              <th className="pb-1 text-right font-black">کاؤنٹر ریکارڈ</th>
-                              <th className="pb-1 text-center font-black">حصے</th>
-                              <th className="pb-1 text-left font-black">وصول شدہ رقم</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200">
-                            {branches.map((b) => {
-                              const bCol = branchCollections[b.id] || { amount: 0, count: 0 };
-                              return (
-                                <tr key={b.id} className="hover:bg-emerald-100/30 transition-colors">
-                                  <td className="py-2 flex items-center gap-1.5 font-bold text-slate-900 text-[11px]">
-                                    <span className={`w-2.5 h-2.5 rounded-full ${b.color} border border-slate-950 shrink-0`}></span>
-                                    {b.label}
-                                  </td>
-                                  <td className="py-2 text-center font-extrabold font-mono text-slate-700">{bCol.count}</td>
-                                  <td className="py-2 text-left font-black font-mono text-emerald-800">
-                                    {bCol.amount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold text-slate-500">روپے</span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                            {/* Unknown fallbacks */}
-                            {branchCollections['unknown'] && branchCollections['unknown'].amount > 0 && (
-                              <tr className="hover:bg-emerald-100/30 transition-colors">
-                                <td className="py-2 flex items-center gap-1.5 font-bold text-slate-800 text-[11px]">
-                                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-950 shrink-0"></span>
-                                  نامعلوم کاؤنٹر
-                                </td>
-                                <td className="py-2 text-center font-extrabold font-mono text-slate-700">{branchCollections['unknown'].count}</td>
-                                <td className="py-2 text-left font-black font-mono text-emerald-800">
-                                  {branchCollections['unknown'].amount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold text-slate-500">روپے</span>
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                          <tfoot>
-                            <tr className="border-t-2 border-slate-950">
-                              <td className="pt-2 font-black text-slate-900 text-xs">گرانڈ ٹوٹل:</td>
-                              <td className="pt-2 text-center font-black font-mono text-slate-800 text-xs">
-                                <span dir="ltr" className="inline-block">{grandTotalCount} / {animals.length * SHARES_PER_ANIMAL}</span>
-                              </td>
-                              <td className="pt-2 text-left font-black font-mono text-emerald-900 text-xs sm:text-sm">
-                                {grandTotalAmount.toLocaleString('ur-PK')}{' '}
-                                <span className="text-[9px] font-extrabold text-slate-650">روپے</span>
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Activities Log sub-panel */}
-                    <div className="border-t-2 border-slate-950 pt-2.5 relative">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[9px] font-black uppercase text-slate-655">سرگرمی لاگ (آخری تبدیلیاں):</span>
-                      </div>
-                      <div className="overflow-y-auto max-h-[95px] pr-1 space-y-1.5 bg-white/70 rounded-xl p-2 border border-slate-400">
-                        {activityLogs.map((log) => (
-                          <div key={log.id} className="text-[10px] leading-relaxed border-b border-slate-200 pb-1 last:border-none last:pb-0">
-                            <div className="flex justify-between items-center text-slate-500 text-[8px] mb-0.5 font-bold">
-                              <span className="text-emerald-800 font-black">{log.branch}</span>
-                              <span>{log.timestamp}</span>
-                            </div>
-                            <p className="text-slate-805 font-medium">{log.details}</p>
-                          </div>
-                        ))}
-                        {activityLogs.length === 0 && (
-                          <p className="text-slate-400 text-center text-[10px] py-1">اب تک کوئی لائیو سرگرمی نہیں ہوئی ہے۔</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
                   <div className="bg-emerald-900 rounded-2xl p-6 text-white flex flex-col justify-between relative overflow-hidden">
                     <div className="relative z-10 space-y-4">
                       <div className="flex items-center gap-2 text-emerald-400">
                         <Info size={18} />
-                        <span className="text-[10px] font-bold uppercase tracking-widest leading-none">مدد اور طریقہ کار</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest leading-none font-sans">مدد اور طریقہ کار</span>
                       </div>
-                      <h3 className="text-lg font-bold">بیک وقت انتظام اور رسیدیں</h3>
-                      <ul className="text-emerald-100/70 text-xs list-disc pr-4 space-y-2">
+                      <h3 className="text-lg font-black font-sans leading-tight">بیک وقت انتظام اور رسیدیں</h3>
+                      <ul className="text-emerald-100/80 text-xs list-disc pr-4 space-y-2 font-bold select-none leading-relaxed">
                         <li>ہر حصہ دار کا حصہ/رقم بک کریں۔</li>
-                        <li>وہیں سے وصولی پر پرنٹ ایبل رسید حاصل کریں۔</li>
-                        <li>ایک سے زیادہ گائے کی رقم اکٹھی ہو جانے پر اکاؤنٹ مینیجر سے بینک ڈپازٹ درج کریں۔</li>
+                        <li>وہیں سے وصولی پر پرنٹ ایبل لائیو رسید حاصل کریں۔</li>
+                        <li>رقم جمع ہو جانے پر اکاؤنٹ مینیجر سے بینک ڈپازٹ درج کریں۔</li>
                       </ul>
                     </div>
                     <Beef className="absolute -bottom-10 -right-10 text-emerald-800 opacity-20" size={160} />
                   </div>
+                </div>
+
+                {/* Center-wise Cumulative Report in List and Columns format */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-4 gap-2">
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <Building size={22} className="text-emerald-600 shrink-0" />
+                        شاخ وار مجموعی رپورٹ (مراکزِ قربانی کا گرانڈ میزانیہ)
+                      </h3>
+                      <p className="text-slate-500 text-[11px] font-bold">
+                        مختلف ذیلی مراکزِ جامعہ کی مجموعی پیش رفت، کل کارکردگی اور مجموعی فنڈز کی ریکارڈ لسٹ
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl border border-emerald-100 shrink-0">
+                      کل فعال مراکز: {centerSupervisors.length}
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-right border-collapse">
+                      <thead>
+                        <tr className="border-b-2 border-slate-900 text-slate-600 font-black text-[11px] bg-slate-50">
+                          <th className="py-3 px-4 text-right font-black">قربانی مرکز (شاخِ جامعہ)</th>
+                          <th className="py-3 px-4 text-right font-black">نگرانِ مرکز (ناظم صاحب)</th>
+                          <th className="py-3 px-4 text-center font-black">بک شدہ کُل حصے</th>
+                          <th className="py-3 px-4 text-center font-black w-1/4">پیش رفتِ بکنگ (فیصد)</th>
+                          <th className="py-3 px-4 text-left font-black">وصول شدہ کل فنڈز</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {centerSupervisors.map((supervisor) => {
+                          const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
+                          // Potential parts across all 60 cows (60 cows * 7 shares/cow = 420 shares total possible overall)
+                          const totalPossibleShares = animals.length * SHARES_PER_ANIMAL;
+                          const percentage = totalPossibleShares > 0 
+                            ? Math.round((cTotal.count / totalPossibleShares) * 100) 
+                            : 0;
+
+                          return (
+                            <tr key={supervisor.centerId} className="hover:bg-slate-50/80 transition-all font-sans">
+                              {/* 1. Center Name */}
+                              <td className="py-4 px-4 font-black text-slate-900 text-sm">
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-3 h-3 rounded-full ${supervisor.color || 'bg-slate-400'} border border-slate-950/20 shrink-0`}></span>
+                                  {supervisor.centerLabel || 'مرکزی مقام'}
+                                </span>
+                              </td>
+
+                              {/* 2. Supervisor */}
+                              <td className="py-4 px-4 font-bold text-slate-700">
+                                {supervisor.label}
+                              </td>
+
+                              {/* 3. Booked Shares */}
+                              <td className="py-4 px-4 text-center font-extrabold font-mono text-slate-800 text-sm">
+                                {cTotal.count} <span className="text-[10px] text-slate-400 font-sans font-normal">حصے</span>
+                              </td>
+
+                              {/* 4. Progress bar */}
+                              <td className="py-4 px-4 text-center">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                                    <div 
+                                      className={`h-full ${supervisor.color || 'bg-emerald-600'} rounded-full transition-all duration-500`}
+                                      style={{ width: `${Math.min(100, percentage)}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-[10px] font-mono font-black text-slate-600 shrink-0">{percentage}%</span>
+                                </div>
+                              </td>
+
+                              {/* 5. Total Funds Received */}
+                              <td className="py-4 px-4 text-left font-black font-mono text-emerald-800 text-sm">
+                                {cTotal.amount.toLocaleString('ur-PK')} <span className="text-[10px] font-sans font-bold text-slate-500">روپے</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-950 bg-slate-100/50 font-black">
+                          <td colSpan={2} className="py-3.5 px-4 font-extrabold text-slate-900 text-sm">کُل ملا کر مجموعی میزانیہ:</td>
+                          <td className="py-3.5 px-4 text-center font-black font-mono text-slate-850 text-sm">
+                            {grandTotalCount} <span className="text-[10px] text-slate-400 font-sans font-normal">اصحابِ حصص</span>
+                          </td>
+                          <td className="py-3.5 px-4"></td>
+                          <td className="py-3.5 px-4 text-left font-black font-mono text-emerald-950 text-base">
+                            {grandTotalAmount.toLocaleString('ur-PK')}{' '}
+                            <span className="text-xs font-sans font-extrabold text-slate-600">روپے</span>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
               </motion.div>
             )}
 
@@ -2407,6 +2412,8 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+
               </motion.div>
             )}
 
