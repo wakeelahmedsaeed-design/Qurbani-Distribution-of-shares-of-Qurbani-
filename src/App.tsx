@@ -326,7 +326,58 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          list = parsed;
+          list = parsed.map((savedBranch: any) => {
+            const def = DEFAULT_BRANCHES.find(d => d.id === savedBranch.id);
+            if (def) {
+              return { 
+                ...def, 
+                ...savedBranch,
+                centerId: def.centerId,
+                centerLabel: def.centerLabel,
+                role: def.role
+              };
+            }
+            
+            // For custom ones, infer missing fields or provide fallback
+            let centerId = savedBranch.centerId;
+            let centerLabel = savedBranch.centerLabel;
+            let role = savedBranch.role || 'qari';
+            
+            if (!centerId) {
+              if (savedBranch.id.startsWith('jauhar')) {
+                centerId = 'jauhar';
+                centerLabel = 'مرکز گلستان جوہر';
+              } else if (savedBranch.id.startsWith('gulshan')) {
+                centerId = 'gulshan';
+                centerLabel = 'مرکز گلشن اقبال';
+              } else if (savedBranch.id.startsWith('korangi')) {
+                centerId = 'korangi';
+                centerLabel = 'کورنگی';
+              } else if (savedBranch.id.startsWith('landhi')) {
+                centerId = 'landhi';
+                centerLabel = 'لانڈھی';
+              } else if (savedBranch.id.startsWith('qayyumabad')) {
+                centerId = 'qayyumabad';
+                centerLabel = 'قیوم آباد';
+              } else {
+                centerId = 'jauhar';
+                centerLabel = 'مرکز گلستان جوہر';
+              }
+            }
+            if (savedBranch.id.includes('_nazim')) {
+              role = 'nazim';
+            }
+            
+            return {
+              color: 'bg-teal-600',
+              textColor: 'text-teal-700',
+              accent: 'teal',
+              ...savedBranch,
+              centerId,
+              centerLabel,
+              role
+            };
+          });
         }
       } catch (e) {
         console.error(e);
@@ -2038,25 +2089,34 @@ export default function App() {
 
   // Employee / Nazim compensation ledger & payroll sheet
   const hidesPayroll = useMemo(() => {
-    // Group hides counts by branch/worker
-    const branchStats: { [branchId: string]: { camel: number; cow: number; goat: number; total: number } } = {};
+    // Filter branches to only keep the Nazim rows (excluding central HQ and Super Admin)
+    const nazimBranches = branches.filter(b => b.role === 'nazim' && b.id !== 'hq' && b.id !== 'super_admin');
+
+    // Group and aggregate skins/hides counts by centerId
+    const centerStats: { [centerId: string]: { camel: number; cow: number; goat: number; total: number } } = {};
     branches.forEach(b => {
-      branchStats[b.id] = { camel: 0, cow: 0, goat: 0, total: 0 };
+      if (b.centerId && !centerStats[b.centerId]) {
+        centerStats[b.centerId] = { camel: 0, cow: 0, goat: 0, total: 0 };
+      }
     });
 
     hides.filter(h => h.year === activeYear).forEach(h => {
       const bId = h.collectedByBranchId;
-      if (!branchStats[bId]) {
-        branchStats[bId] = { camel: 0, cow: 0, goat: 0, total: 0 };
+      const associatedBranch = branches.find(br => br.id === bId);
+      if (associatedBranch && associatedBranch.centerId) {
+        const cId = associatedBranch.centerId;
+        if (!centerStats[cId]) {
+          centerStats[cId] = { camel: 0, cow: 0, goat: 0, total: 0 };
+        }
+        centerStats[cId].camel += h.camelCount || 0;
+        centerStats[cId].cow += h.cowCount || 0;
+        centerStats[cId].goat += h.goatCount || 0;
+        centerStats[cId].total += (h.camelCount || 0) + (h.cowCount || 0) + (h.goatCount || 0);
       }
-      branchStats[bId].camel += h.camelCount || 0;
-      branchStats[bId].cow += h.cowCount || 0;
-      branchStats[bId].goat += h.goatCount || 0;
-      branchStats[bId].total += (h.camelCount || 0) + (h.cowCount || 0) + (h.goatCount || 0);
     });
 
-    return branches.map(b => {
-      const stats = branchStats[b.id] || { camel: 0, cow: 0, goat: 0, total: 0 };
+    return nazimBranches.map(b => {
+      const stats = centerStats[b.centerId] || { camel: 0, cow: 0, goat: 0, total: 0 };
       
       const nazimCount = typeof wageRates.nazimCounts?.[b.id] === 'number'
         ? wageRates.nazimCounts[b.id]
@@ -2414,23 +2474,30 @@ export default function App() {
                   <h2 className="text-xl lg:text-2xl font-black text-slate-900 font-sans tracking-tight">اجتماعی قربانی</h2>
                   <h3 className="text-base font-extrabold text-emerald-800 font-sans">جامعہ اشرف المدارس کراچی</h3>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-white ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
-                      {activeBranchLabel}
+                    <span className={`text-[10px] font-bold px-3 py-1 rounded-2xl text-white inline-flex flex-col text-right leading-tight ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
+                      <span className="opacity-95">{activeBranchObj?.centerLabel || ''} —</span>
+                      <span className="font-extrabold">{activeBranchObj?.label || ''}</span>
                     </span>
                   </div>
                 </div>
               ) : (
-                <h2 className="text-lg lg:text-xl font-black text-slate-800 flex items-center gap-2">
+                <h2 className="text-lg lg:text-xl font-black text-slate-800 flex items-center gap-3">
                   {view === 'list' ? 'تمام جانوروں کی فہرست' 
                     : view === 'deposits' ? 'بینک ٹرانسفر / فنڈز مینیجر'
                     : view === 'settings' ? 'جانوروں کا نیا اندراج' 
                     : view === 'tags' ? 'قربانی جانوروں کے ٹیگ پرنٹ'
                     : view === 'records' ? 'کھاتہ داران ڈیٹا ریکارڈ لسٹ'
                     : view === 'ledger' ? 'جنرل کاؤنٹر لیجر وصولی رپورٹ'
-                    : view === 'hides' ? 'چرم قربانی (کھال وصولی و ملازمین حساب)'
+                    : view === 'hides' ? (
+                      <span className="flex flex-col text-right leading-tight">
+                        <span className="text-base sm:text-lg">چرم قربانی</span>
+                        <span className="text-[10px] sm:text-xs font-bold text-slate-500 mt-0.5">(کھال وصولی و ملازمین حساب)</span>
+                      </span>
+                    )
                     : selectedAnimal?.label}
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
-                    {activeBranchLabel}
+                  <span className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-2xl text-white inline-flex flex-col text-right leading-tight ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
+                    <span className="opacity-90">{activeBranchObj?.centerLabel || ''} —</span>
+                    <span className="font-extrabold">{activeBranchObj?.label || ''}</span>
                   </span>
                 </h2>
               )}
@@ -2444,10 +2511,11 @@ export default function App() {
 
           {/* Active Branch and Log out */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-400 font-bold block text-left">لاگ ان سیشن بابت:</span>
-              <span className={`text-xs font-black px-3 py-1.5 rounded-xl text-white flex items-center gap-1.5 shadow-sm ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-700'}`}>
-                {activeBranchLabel}
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="text-[10px] text-slate-400 font-black block text-right">لاگ ان سیشن بابت:</span>
+              <span className={`text-[11px] font-black px-3 py-1.5 rounded-2xl text-white flex flex-col text-right leading-tight shadow-sm ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-700'}`}>
+                <span className="opacity-90">{activeBranchObj?.centerLabel || ''} —</span>
+                <span className="font-extrabold">{activeBranchObj?.label || ''}</span>
               </span>
             </div>
 
@@ -2457,29 +2525,31 @@ export default function App() {
               <span className="text-xs font-black text-indigo-950 font-mono leading-none">{activeYear}</span>
             </div>
 
-            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-xl px-3 py-1.5">
-              <RotateCw className="text-emerald-500 animate-spin" size={14} />
-              <span className="text-[10px] font-bold">لائیو کلاؤڈ سنک فعال ہے</span>
-            </div>
+            <div className="flex items-center gap-2 font-sans">
+              <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-850 border border-emerald-100 rounded-xl px-2.5 py-1.5 shadow-sm shrink-0">
+                <RotateCw className="text-emerald-500 animate-spin shrink-0" size={12} />
+                <span className="text-[10px] font-black whitespace-nowrap">لائیو کلاؤڈ سنک فعال ہے</span>
+              </div>
 
-            <button
-              onClick={() => {
-                triggerConfirm(
-                  'کیا آپ واقعی اپنے لاگ ان سیشن سے لاگ آؤٹ ہو کر دوسرا اکاؤنٹ منتخب کرنا چاہتے ہیں؟',
-                  () => {
-                    setIsAuthenticated(false);
-                    localStorage.setItem('qurbani_is_authenticated_v5', 'false');
-                    setLoginPassword('');
-                    setLoginError('');
-                  },
-                  'لاگ آؤٹ تصدیق'
-                );
-              }}
-              className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 px-3.5 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
-              title="سیشن سے لاگ آؤٹ کر کے دوسرے کاؤنٹر میں منتخب لاگ ان کریں"
-            >
-              <LogOut size={14} /> لاگ آؤٹ
-            </button>
+              <button
+                onClick={() => {
+                  triggerConfirm(
+                    'کیا آپ واقعی اپنے لاگ ان سیشن سے لاگ آؤٹ ہو کر دوسرا اکاؤنٹ منتخب کرنا چاہتے ہیں؟',
+                    () => {
+                      setIsAuthenticated(false);
+                      localStorage.setItem('qurbani_is_authenticated_v5', 'false');
+                      setLoginPassword('');
+                      setLoginError('');
+                    },
+                    'لاگ آؤٹ تصدیق'
+                  );
+                }}
+                className="bg-red-50 hover:bg-red-100 text-red-650 border border-red-100 px-3 py-1.5 rounded-xl font-black text-[10px] sm:text-xs transition-all flex items-center gap-1 active:scale-95 shadow-sm shrink-0"
+                title="سیشن سے لاگ آؤٹ کر کے دوسرے کاؤنٹر میں منتخب لاگ ان کریں"
+              >
+                <LogOut size={12} /> لاگ آؤٹ
+              </button>
+            </div>
           </div>
         </header>
 
@@ -3628,15 +3698,26 @@ export default function App() {
                         <Coins size={22} className="text-amber-400" />
                         مرکزی ہیڈ کوارٹر پے رول شیٹ (کھالیں اجرت و انعام)
                       </h3>
-                      <p className="text-slate-400 text-[11px] font-bold">
-                        رول سیکیورٹی ضوابط کے تحت صرف مرکزی سپر ایڈمن کھال کی قیمت اجرت اور فکسڈ ڈیلی ویج کا ریکارڈ درج اور ایڈٹ کرسکتا ہے۔
+                      <p className="text-slate-400 text-[11px] font-bold leading-relaxed">
+                        رول سیکیورٹی ضوابط کے تحت <br />
+                        صرف مرکزی سپر ایڈمن کھال کی قیمت اجرت اور فکسڈ ڈیلی ویج کا ریکارڈ درج اور ایڈٹ کرسکتا ہے۔
                       </p>
                     </div>
                     {/* Role badge */}
-                    <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl border ${
-                      isSuperAdmin ? 'bg-rose-900/40 text-rose-300 border-rose-900/50 animate-pulse' : 'bg-amber-900/40 text-amber-300 border-amber-900/60'
+                    <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl border flex flex-col text-right sm:text-left leading-normal ${
+                      isSuperAdmin 
+                        ? 'bg-rose-900/40 text-rose-300 border-rose-900/50 animate-pulse' 
+                        : isNazim 
+                        ? 'bg-amber-900/40 text-amber-300 border-amber-900/60' 
+                        : 'bg-slate-800 text-slate-500 border-slate-700'
                     }`}>
-                      انتظامی اختیار: {isSuperAdmin ? 'مرکزی سپر ایڈمن - کُل ایڈٹ بحال' : 'ناظم شعبہ - اپنا کاؤنٹر ایڈٹ'}
+                      <span>انتظامی اختیار:</span>
+                      <span className="text-xs font-black mt-0.5">
+                        {isSuperAdmin ? 'مرکزی سپر ایڈمن' : isNazim ? 'ناظمِ شعبہ' : 'قاری کاؤنٹر'}
+                        <span className="block text-[9px] opacity-80 font-normal">
+                          {isSuperAdmin ? 'کُل ایڈٹ بحال' : isNazim ? 'اپنے مَرکز کا ایڈٹ بحال' : 'صرف مشاہدہ'}
+                        </span>
+                      </span>
                     </span>
                   </div>
 
@@ -3750,7 +3831,24 @@ export default function App() {
                       <tbody className="divide-y divide-slate-800 text-slate-300 font-sans">
                         {hidesPayroll.map((item) => {
                           if (item.branch.id === 'hq') return null; // HQ represents central office, excluding from payroll
-                          const canEdit = isSuperAdmin || (isAuthenticated && activeBranch === item.branch.id);
+                          const branchCenter = String(item.branch.centerId || '').toLowerCase().trim();
+                          const activeCenter = String(activeBranchObj?.centerId || '').toLowerCase().trim();
+                          
+                          // Fallback prefix extraction (e.g. from id: jauhar_nazim -> jauhar)
+                          const getPrefix = (id: string) => id.split('_')[0] || '';
+                          const isSameCenterPrefix = getPrefix(item.branch.id) === getPrefix(activeBranchObj?.id || '');
+
+                          // Each madrassa's Nazim can only see and feed their own data. They can't see other branches' data.
+                          // But Super Admin can see all rows.
+                          const isSameCenter = branchCenter === activeCenter || isSameCenterPrefix;
+                          if (!isSuperAdmin && isAuthenticated) {
+                            if (!isSameCenter) return null;
+                          }
+
+                          // Super Admin cannot edit this, only local center Nazim can edit their own center's row
+                          const canEdit = isAuthenticated && activeBranchObj && activeBranchObj.role === 'nazim' && (
+                            branchCenter === activeCenter || isSameCenterPrefix
+                          );
                           return (
                             <tr key={item.branch.id} className="hover:bg-slate-820 transition-all">
                               {/* Branch label */}
