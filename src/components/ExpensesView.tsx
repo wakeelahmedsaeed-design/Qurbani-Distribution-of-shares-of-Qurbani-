@@ -116,9 +116,13 @@ export default function ExpensesView({
   const bookedAnimals = useMemo(() => getBookedAnimalsCount(targetCenterId), [targetCenterId, animals, branches]);
 
   // Standard initial expense template items
-  const getInitialExpenseRows = (count: number): ExpenseItem[] => [
-    {
-      id: 'r_1',
+  const getInitialExpenseRows = (count: number, centerId: string): ExpenseItem[] => {
+    if (centerId !== 'korangi') {
+      return [];
+    }
+    return [
+      {
+        id: 'r_1',
       serialNum: 1,
       description: `قصائی اجرت ${count} جانور`,
       natureOfWork: 'ذبح و کٹائی',
@@ -214,6 +218,7 @@ export default function ExpensesView({
       total: 1000
     }
   ];
+};
 
   // Retrieve existing record or build transient state
   const centerRecord = useMemo(() => {
@@ -223,7 +228,7 @@ export default function ExpensesView({
       centerId: targetCenterId,
       year: activeYear,
       supervisorName: getDefaultSupervisorName(targetCenterId),
-      items: getInitialExpenseRows(bookedAnimals)
+      items: getInitialExpenseRows(bookedAnimals, targetCenterId)
     };
   }, [centerExpensesList, targetCenterId, activeYear, bookedAnimals]);
 
@@ -346,7 +351,7 @@ export default function ExpensesView({
   };
 
   const handleResetToDefaults = () => {
-    setItems(getInitialExpenseRows(bookedAnimals));
+    setItems(getInitialExpenseRows(bookedAnimals, targetCenterId));
     setShowResetConfirm(false);
     setSuccessToast('اخراجات کا ریکارڈ ابتدائی فارمیٹ پر کامیابی سے ری سیٹ کر دیا گیا ہے!');
     setTimeout(() => {
@@ -362,7 +367,7 @@ export default function ExpensesView({
     }
     // calculate default total if none entered
     const defaultAnimals = getBookedAnimalsCount(cId);
-    return getInitialExpenseRows(defaultAnimals).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+    return getInitialExpenseRows(defaultAnimals, cId).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   };
 
   // Perfect A4 Printing Trigger using robust top-level innerHTML replacement technique
@@ -575,7 +580,7 @@ export default function ExpensesView({
             </>
           ) : (
             // Only allow editing if user is Korangi Nazim on their own center, OR Central Admin on their own center
-            (activeBranchObj?.centerId === targetCenterId && activeBranchObj?.role === 'nazim') && (
+            (isCentralAdmin || (activeBranchObj?.centerId === targetCenterId && activeBranchObj?.role === 'nazim')) && (
               <button
                 onClick={() => setIsEditing(true)}
                 className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs flex items-center gap-2 shadow transition-all"
