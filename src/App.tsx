@@ -196,7 +196,7 @@ const CompactStepper = ({
 
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'list' | 'detail' | 'settings' | 'deposits' | 'tags' | 'records' | 'ledger' | 'hides'>(() => {
-    return (sessionStorage.getItem('qurbani_active_view') as any) || 'dashboard';
+    return 'dashboard';
   });
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -934,6 +934,34 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(`qurbani_global_waqf_share_amount_v5_${activeYear}`, globalWaqfShareAmount.toString());
   }, [globalWaqfShareAmount, activeYear]);
+
+  // Synchronizers to apply and maintain global share prices automatically across all matching registers
+  useEffect(() => {
+    setAnimals(prev => {
+      let changed = false;
+      const updated = prev.map(a => {
+        let animalChanged = false;
+        const updatedShares = a.shares.map(s => {
+          const expectedAmount = s.qurbaniType === 'waqf' ? globalWaqfShareAmount : globalShareAmount;
+          if (s.amountPaid !== expectedAmount) {
+            animalChanged = true;
+            changed = true;
+            return { ...s, amountPaid: expectedAmount };
+          }
+          return s;
+        });
+        if (animalChanged) {
+          return { ...a, shares: updatedShares };
+        }
+        return a;
+      });
+      if (changed) {
+        localStorage.setItem(`qurbani_data_v4_${activeYear}`, JSON.stringify(updated));
+        return updated;
+      }
+      return prev;
+    });
+  }, [globalShareAmount, globalWaqfShareAmount, activeYear]);
 
   useEffect(() => {
     localStorage.setItem(`qurbani_hides_v1_${activeYear}`, JSON.stringify(hides));
@@ -1797,6 +1825,10 @@ export default function App() {
     if (targetAnimal) {
       const targetShare = targetAnimal.shares.find(s => s.id === shareId);
       if (targetShare && targetShare.isPaid) {
+        if (!isSuperAdmin && !isNazim) {
+          alert("معذرت! ایک بار ادائیگی وصول کرنے کے بعد، اسے قاری کاؤنٹر سے منسوخ کرنے کی اجازت نہیں ہے۔");
+          return;
+        }
         if (!isNazim && targetShare.paidByBranchId && targetShare.paidByBranchId !== activeBranch) {
           paidByOther = true;
           otherBranchName = targetShare.paidByBranchLabel || 'متبادل کاؤنٹر';
@@ -3525,7 +3557,7 @@ export default function App() {
                                     <input 
                                       type="number" 
                                       value={s.amountPaid}
-                                      disabled={isShareLocked || !isNazim}
+                                      disabled={true}
                                       onChange={(e) => updateShareAmount(selectedAnimal.id, s.id, Number(e.target.value))}
                                       className="w-full bg-slate-50 border border-slate-200 h-10 px-3 rounded-xl font-bold font-mono text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="رقم درج کریں"
@@ -3606,14 +3638,14 @@ export default function App() {
                               {/* Toggle Payment */}
                               <button
                                 onClick={() => togglePayment(selectedAnimal.id, s.id)}
-                                disabled={isShareLocked}
+                                disabled={isShareLocked || (s.isPaid && !isNazim && !isSuperAdmin)}
                                 className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all shadow-sm ${
                                   isShareLocked
                                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
                                     : s.isPaid 
-                                      ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' 
+                                      ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100/50' 
                                       : 'bg-white border-slate-200 text-slate-500 hover:border-blue-200 hover:bg-slate-50'
-                                }`}
+                                } ${(s.isPaid && !isNazim && !isSuperAdmin) ? 'cursor-not-allowed' : ''}`}
                               >
                                 {isShareLocked ? (
                                   <>
@@ -3622,7 +3654,7 @@ export default function App() {
                                   </>
                                 ) : (
                                   <>
-                                    {s.isPaid ? <CheckCircle2 size={14} className="text-blue-600 shrink-0" /> : <Circle size={14} className="text-slate-300 shrink-0" />}
+                                    {s.isPaid ? <CheckCircle2 size={14} className="text-green-600 shrink-0" /> : <Circle size={14} className="text-slate-300 shrink-0" />}
                                     {s.isPaid ? `رقم موصول: ${s.amountPaid.toLocaleString('ur-PK')}` : 'ادائیگی وصول کریں'}
                                   </>
                                 )}
