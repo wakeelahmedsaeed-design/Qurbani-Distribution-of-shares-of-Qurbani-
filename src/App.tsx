@@ -3643,8 +3643,8 @@ export default function App() {
                                   isShareLocked
                                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
                                     : s.isPaid 
-                                      ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100/50' 
-                                      : 'bg-white border-slate-200 text-slate-500 hover:border-blue-200 hover:bg-slate-50'
+                                      ? 'bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-750' 
+                                      : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-200 hover:bg-slate-50'
                                 } ${(s.isPaid && !isNazim && !isSuperAdmin) ? 'cursor-not-allowed' : ''}`}
                               >
                                 {isShareLocked ? (
@@ -3654,7 +3654,7 @@ export default function App() {
                                   </>
                                 ) : (
                                   <>
-                                    {s.isPaid ? <CheckCircle2 size={14} className="text-green-600 shrink-0" /> : <Circle size={14} className="text-slate-300 shrink-0" />}
+                                    {s.isPaid ? <CheckCircle2 size={14} className="text-white shrink-0" /> : <Circle size={14} className="text-slate-300 shrink-0" />}
                                     {s.isPaid ? `رقم موصول: ${s.amountPaid.toLocaleString('ur-PK')}` : 'ادائیگی وصول کریں'}
                                   </>
                                 )}
