@@ -2689,8 +2689,10 @@ export default function App() {
             <div>
               {view === 'dashboard' ? (
                 <div className="flex flex-col gap-0.5">
-                  <h2 className="text-xl lg:text-2xl font-black text-slate-900 font-sans tracking-tight">اجتماعی قربانی</h2>
-                  <h3 className="text-base font-extrabold text-emerald-800 font-sans">جامعہ اشرف المدارس کراچی</h3>
+                  <div className="flex items-center sm:items-baseline gap-2 flex-wrap text-right">
+                    <h2 className="text-xl lg:text-2xl font-black text-slate-900 font-sans tracking-tight">اجتماعی قربانی</h2>
+                    <h3 className="text-base lg:text-lg font-extrabold text-emerald-800 font-sans">جامعہ اشرف المدارس کراچی</h3>
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`text-[11px] font-black px-4 py-1.5 rounded-xl text-white shadow-sm whitespace-nowrap inline-block text-center leading-normal ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
                       {activeBranchObj?.centerLabel || ''} — {activeBranchObj?.label || ''}
