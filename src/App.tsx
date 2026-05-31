@@ -438,9 +438,7 @@ export default function App() {
   }, [activeBranchObj]);
 
   const isGlobalDashboard = useMemo(() => {
-    if (!activeBranchObj) return true;
-    const cid = activeBranchObj.centerId;
-    return cid === 'markaz_e_ala' || cid === 'jauhar' || cid === 'gulshan';
+    return activeBranchObj?.role === 'super_admin';
   }, [activeBranchObj]);
 
   const activeCenterBranches = useMemo(() => {
@@ -2577,13 +2575,15 @@ export default function App() {
             <span className="hidden lg:block text-sm">گائے کی لسٹ دیکھیں</span>
           </button>
 
-          <button 
-            onClick={() => setView('deposits')}
-            className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'deposits' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
-          >
-            <Coins size={22} />
-            <span className="hidden lg:block text-sm">بینک میں رقم جمع</span>
-          </button>
+          {isNazim && (
+            <button 
+              onClick={() => setView('deposits')}
+              className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'deposits' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+            >
+              <Coins size={22} />
+              <span className="hidden lg:block text-sm">بینک میں رقم جمع</span>
+            </button>
+          )}
 
           <button 
             onClick={() => setView('tags')}
@@ -2601,13 +2601,15 @@ export default function App() {
             <span className="hidden lg:block text-sm">ڈیٹا ریکارڈ</span>
           </button>
 
-          <button 
-            onClick={() => setView('ledger')}
-            className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'ledger' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
-          >
-            <Activity size={22} />
-            <span className="hidden lg:block text-sm">جنرل لیجر</span>
-          </button>
+          {isNazim && (
+            <button 
+              onClick={() => setView('ledger')}
+              className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'ledger' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+            >
+              <Activity size={22} />
+              <span className="hidden lg:block text-sm">جنرل لیجر</span>
+            </button>
+          )}
 
           <button 
             onClick={() => setView('hides')}
@@ -2617,13 +2619,15 @@ export default function App() {
             <span className="hidden lg:block text-sm">چرم قربانی</span>
           </button>
 
-          <button 
-            onClick={() => setView('settings')}
-            className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'settings' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
-          >
-            <Settings size={22} />
-            <span className="hidden lg:block text-sm">گائے کا اندراج</span>
-          </button>
+          {isNazim && (
+            <button 
+              onClick={() => setView('settings')}
+              className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'settings' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+            >
+              <Settings size={22} />
+              <span className="hidden lg:block text-sm">گائے کا اندراج</span>
+            </button>
+          )}
         </nav>
 
         <div className="p-6 border-t border-emerald-900/40 text-[10px] text-emerald-500/50 text-center hidden lg:block uppercase font-bold">
@@ -2732,7 +2736,7 @@ export default function App() {
                 className="space-y-8"
               >
                 {/* Stats row with payment detail integration */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className={`grid grid-cols-1 ${activeBranchObj?.role !== 'qari' ? 'sm:grid-cols-2 lg:grid-cols-5' : 'sm:grid-cols-1 max-w-sm'} gap-4`}>
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                     <p className="text-slate-500 text-xs font-bold mb-1">کُل فعال گائے/بیل</p>
                     <div className="flex items-end justify-between">
@@ -2741,228 +2745,189 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                    <p className="text-emerald-600 text-xs font-bold mb-1">وصول شدہ کُل فنڈز</p>
-                    <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-emerald-600 font-mono">
-                        {stats.totalCashReceived.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
-                      </h4>
-                      <Coins className="text-emerald-100 shrink-0" size={32} />
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                    <p className="text-blue-600 text-xs font-bold mb-1">بینک اکاؤنٹ میں منتقل</p>
-                    <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-blue-600 font-mono">
-                        {stats.bankDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
-                      </h4>
-                      <CreditCard className="text-blue-100 shrink-0" size={32} />
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                    <p className="text-indigo-600 text-xs font-bold mb-1">مرکزی کاؤنٹر دراز والٹ</p>
-                    <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-indigo-700 font-mono">
-                        {stats.counterDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
-                      </h4>
-                      <Briefcase className="text-indigo-100 shrink-0" size={32} />
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                    <p className="text-orange-500 text-xs font-bold mb-1">کیش آف ہینڈ (غیر منتقل)</p>
-                    <div className="flex items-end justify-between">
-                      <h4 className="text-xl font-black text-orange-600 font-mono">
-                        {stats.cashOnHand.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal"> روپے</span>
-                      </h4>
-                      <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-500 font-extrabold text-[10px] shrink-0">{stats.paymentPercentage}%</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Grid controls */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col items-center justify-center text-center space-y-6">
-                    <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 shrink-0">
-                      <ScrollText size={32} />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-black text-slate-800 font-urdu leading-normal">قربانی مہم کے لیے مشترکہ انتظام</h3>
-                      <p className="text-slate-500 max-w-lg mt-1.5 leading-relaxed text-xs font-sans">
-                        ہر برانچ (کورنگی، لانڈھی، قیوم آباد، ہیڈ آفس) کے وصول کنندگان اسی سافٹ وئیر پر بیک وقت کام کرسکتے ہیں۔ جوں ہی کوئی وصولی ہوگی، مانیٹر پر لائیو سنک ہوگی!
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-3 justify-center">
-                      <button 
-                        onClick={() => setView('list')}
-                        className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 text-xs shadow-md active:scale-95"
-                      >
-                        <ScrollText size={16} /> گائے کی لسٹ اور ٹریکنگ
-                      </button>
-                      <button 
-                        onClick={() => setView('deposits')}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-1.5 text-xs active:scale-95"
-                      >
-                        <Coins size={16} /> بینک و کیش دراز منتقلی
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-emerald-900 rounded-2xl p-6 text-white flex flex-col justify-between relative overflow-hidden">
-                    <div className="relative z-10 space-y-4">
-                      <div className="flex items-center gap-2 text-emerald-400">
-                        <Info size={18} />
-                        <span className="text-xs font-bold uppercase tracking-widest leading-relaxed font-urdu">مدد اور طریقہ کار</span>
+                  {activeBranchObj?.role !== 'qari' && (
+                    <>
+                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                        <p className="text-emerald-600 text-xs font-bold mb-1">وصول شدہ کُل فنڈز</p>
+                        <div className="flex items-end justify-between">
+                          <h4 className="text-xl font-black text-emerald-600 font-mono">
+                            {stats.totalCashReceived.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
+                          </h4>
+                          <Coins className="text-emerald-100 shrink-0" size={32} />
+                        </div>
                       </div>
-                      <h3 className="text-xl font-black font-urdu leading-normal">بیک وقت انتظام اور رسیدیں</h3>
-                      <ul className="text-emerald-100/80 text-xs list-disc pr-4 space-y-2 font-bold select-none leading-relaxed">
-                        <li>ہر حصہ دار کا حصہ/رقم بک کریں۔</li>
-                        <li>وہیں سے وصولی پر پرنٹ ایبل لائیو رسید حاصل کریں۔</li>
-                        <li>رقم جمع ہو جانے پر اکاؤنٹ مینیجر سے بینک ڈپازٹ درج کریں۔</li>
-                      </ul>
-                    </div>
-                    <Beef className="absolute -bottom-10 -right-10 text-emerald-800 opacity-20" size={160} />
-                  </div>
+
+                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                        <p className="text-blue-600 text-xs font-bold mb-1">بینک اکاؤنٹ میں منتقل</p>
+                        <div className="flex items-end justify-between">
+                          <h4 className="text-xl font-black text-blue-600 font-mono">
+                            {stats.bankDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
+                          </h4>
+                          <CreditCard className="text-blue-100 shrink-0" size={32} />
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                        <p className="text-indigo-600 text-xs font-bold mb-1">مرکزی کاؤنٹر دراز والٹ</p>
+                        <div className="flex items-end justify-between">
+                          <h4 className="text-xl font-black text-indigo-700 font-mono">
+                            {stats.counterDepositedAmount.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal font-sans"> روپے</span>
+                          </h4>
+                          <Briefcase className="text-indigo-100 shrink-0" size={32} />
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                        <p className="text-orange-500 text-xs font-bold mb-1">کیش آف ہینڈ (غیر منتقل)</p>
+                        <div className="flex items-end justify-between">
+                          <h4 className="text-xl font-black text-orange-600 font-mono">
+                            {stats.cashOnHand.toLocaleString('ur-PK')}<span className="text-[10px] text-slate-400 font-normal"> روپے</span>
+                          </h4>
+                          <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-500 font-extrabold text-[10px] shrink-0">{stats.paymentPercentage}%</div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Redesigned Branch Ledger Card Deck (شاخ وار مجموعی رپورٹ) */}
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8 space-y-6">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-4 gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 bg-emerald-600 rounded-full animate-pulse"></span>
-                        <h3 className="text-lg font-black text-slate-900 font-sans tracking-tight">
-                          شاخ وار مجموعی رپورٹ (مراکزِ قربانی کا گرانڈ میزانیہ)
-                        </h3>
-                      </div>
-                      <p className="text-slate-500 text-[11px] font-bold">
-                        ذیلی برانچز اور ان کے متعلقہ انتظامی ناظمین کی کل وصولی، فیصد پیش رفت اور فنڈز کا خلاصه
-                      </p>
-                    </div>
-                    <span className="text-[10px] bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl border border-emerald-100 shrink-0">
-                      کل فعال مراکز: {filteredCenterSupervisors.length}
-                    </span>
-                  </div>
-
-                  {/* Multi-Column List Format */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {filteredCenterSupervisors.map((supervisor) => {
-                      const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
-                      const centerBranchIds = branches.filter(b => b.centerId === supervisor.centerId).map(b => b.id);
-                      const activeCenterAnimalsCount = animals.filter(a => 
-                        a.shares.some(s => s.isPaid && s.paidByBranchId && centerBranchIds.includes(s.paidByBranchId))
-                      ).length;
-
-                      const dynamicTotalShares = activeCenterAnimalsCount * SHARES_PER_ANIMAL;
-
-                      const percentage = dynamicTotalShares > 0 
-                        ? Math.round((cTotal.count / dynamicTotalShares) * 100) 
-                        : 0;
-
-                      return (
-                        <div 
-                          key={supervisor.centerId} 
-                          className="bg-slate-50/50 hover:bg-slate-50 border border-slate-100 hover:border-slate-200/80 rounded-2xl p-5 transition-all flex flex-col justify-between gap-4"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-3">
-                              <span className={`w-3.5 h-3.5 rounded-xl ${supervisor.color || 'bg-emerald-600'} border-2 border-white shadow-sm shrink-0`}></span>
-                              <div className="space-y-1.5 flex flex-col justify-center">
-                                <h4 className="font-extrabold text-slate-950 text-sm leading-normal">{supervisor.centerLabel || 'مرکزی مقام'}</h4>
-                                <span className="text-[11px] text-slate-500 font-bold block leading-relaxed">انتظامی ناظم: {supervisor.label}</span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">وصول شدہ فنڈز</span>
-                              <strong className="text-emerald-700 font-black font-mono text-base">{cTotal.amount.toLocaleString('ur-PK')}<span className="text-[10px] font-bold font-sans"> روپے</span></strong>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5 pt-2 border-t border-slate-150/50">
-                            <div className="flex justify-between items-center text-xs pb-1 border-b border-slate-100/40">
-                              <span className="text-slate-500 font-bold">بک شدہ جانور:</span>
-                              <span className="font-extrabold text-slate-800 font-mono text-xs">{activeCenterAnimalsCount} <span className="text-[10px] font-sans font-normal text-slate-400">جانور</span></span>
-                            </div>
-
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-500 font-bold">بک شدہ حصے:</span>
-                              <span className="font-black text-slate-800 font-mono text-xs" dir="ltr">{cTotal.count} / {dynamicTotalShares} <span className="text-[10px] font-sans font-normal text-slate-400" dir="rtl">حصہ دار</span></span>
-                            </div>
-                            
-                            <div className="flex items-center gap-3 font-sans">
-                              <div className="flex-1 bg-slate-250 h-2 rounded-full overflow-hidden">
-                                <div 
-                                  className={`h-full ${supervisor.color || 'bg-emerald-600'} rounded-full transition-all duration-500`}
-                                  style={{ width: `${Math.min(100, percentage)}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-[11px] font-mono font-black text-slate-700 shrink-0">{percentage}%</span>
-                            </div>
-                          </div>
+                {activeBranchObj?.role !== 'qari' && (
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 lg:p-8 space-y-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-4 gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 bg-emerald-600 rounded-full animate-pulse"></span>
+                          <h3 className="text-lg font-black text-slate-900 font-sans tracking-tight">
+                            شاخ وار مجموعی رپورٹ (مراکزِ قربانی کا گرانڈ میزانیہ)
+                          </h3>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Grand consolidated bottom row */}
-                  <div className="bg-slate-900 text-white rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm border border-slate-800">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-base font-sans">∑</div>
-                      <div>
-                        <strong className="text-slate-200 font-extrabold text-sm block">کُل ملا کر مجموعی گرانڈ رپورٹ:</strong>
-                        <span className="text-[10px] text-slate-400 font-bold block">تمام ذیلی کاؤنٹرز و شاخوں کا یکجا میزان</span>
+                        <p className="text-slate-500 text-[11px] font-bold">
+                          ذیلی برانچز اور ان کے متعلقہ انتظامی ناظمین کی کل وصولی، فیصد پیش رفت اور فنڈز کا خلاصه
+                        </p>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-8 font-sans">
-                      <div className="text-center sm:text-right">
-                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک حصے:</span>
-                        <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalCount} <span className="text-xs font-normal font-sans text-slate-300">حصے</span></strong>
-                      </div>
-                      <div className="w-px h-8 bg-slate-800"></div>
-                      <div className="text-center sm:text-right">
-                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک جانور:</span>
-                        <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalAnimals} <span className="text-xs font-normal font-sans text-slate-300">جانور</span></strong>
-                      </div>
-                      <div className="w-px h-8 bg-slate-800"></div>
-                      <div className="text-center sm:text-left">
-                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5 font-sans">وصول شدہ کل فنڈز:</span>
-                        <strong className="text-emerald-400 font-black text-lg font-mono leading-none">{grandTotalAmount.toLocaleString('ur-PK')} <span className="text-xs font-normal font-sans">روپے</span></strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Qurbani Share Type Breakdowns */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-black text-slate-500 block uppercase">عام حصے (بنیادی / انفرادی)</span>
-                        <span className="text-lg font-black text-slate-800 font-mono" dir="ltr">
-                          {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal} <span className="text-xs font-bold text-slate-400 font-sans" dir="rtl">حصے بک</span>
-                        </span>
-                      </div>
-                      <div className="text-left">
-                        <span className="text-[10px] font-bold text-slate-400 block">وصول شدہ رقم</span>
-                        <strong className="text-emerald-600 font-black text-sm font-mono">{qurbaniStats.standardPaidAmount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold font-sans">روپے</span></strong>
-                      </div>
+                      <span className="text-[10px] bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl border border-emerald-100 shrink-0">
+                        کل فعال مراکز: {filteredCenterSupervisors.length}
+                      </span>
                     </div>
 
-                    <div className="bg-gradient-to-br from-slate-50 to-blue-50/20 border border-blue-200/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-black text-blue-800 block uppercase">وقف قربانی حصے</span>
-                        <span className="text-lg font-black text-blue-900 font-mono" dir="ltr">
-                          {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal} <span className="text-xs font-bold text-blue-400 font-sans" dir="rtl">وقف بک</span>
-                        </span>
+                    {/* Multi-Column List Format */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {filteredCenterSupervisors.map((supervisor) => {
+                        const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
+                        const centerBranchIds = branches.filter(b => b.centerId === supervisor.centerId).map(b => b.id);
+                        const activeCenterAnimalsCount = animals.filter(a => 
+                          a.shares.some(s => s.isPaid && s.paidByBranchId && centerBranchIds.includes(s.paidByBranchId))
+                        ).length;
+
+                        const dynamicTotalShares = activeCenterAnimalsCount * SHARES_PER_ANIMAL;
+
+                        const percentage = dynamicTotalShares > 0 
+                          ? Math.round((cTotal.count / dynamicTotalShares) * 105) 
+                          : 0;
+
+                        return (
+                          <div 
+                            key={supervisor.centerId} 
+                            className="bg-slate-50/50 hover:bg-slate-50 border border-slate-100 hover:border-slate-200/80 rounded-2xl p-5 transition-all flex flex-col justify-between gap-4"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className={`w-3.5 h-3.5 rounded-xl ${supervisor.color || 'bg-emerald-600'} border-2 border-white shadow-sm shrink-0`}></span>
+                                <div className="space-y-1.5 flex flex-col justify-center">
+                                  <h4 className="font-extrabold text-slate-950 text-sm leading-normal">{supervisor.centerLabel || 'مرکزی مقام'}</h4>
+                                  <span className="text-[11px] text-slate-500 font-bold block leading-relaxed">انتظامی ناظم: {supervisor.label}</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">وصول شدہ فنڈز</span>
+                                <strong className="text-emerald-700 font-black font-mono text-base">{cTotal.amount.toLocaleString('ur-PK')}<span className="text-[10px] font-bold font-sans"> روپے</span></strong>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5 pt-2 border-t border-slate-150/50">
+                              <div className="flex justify-between items-center text-xs pb-1 border-b border-slate-100/40">
+                                <span className="text-slate-500 font-bold">بک شدہ جانور:</span>
+                                <span className="font-extrabold text-slate-800 font-mono text-xs">{activeCenterAnimalsCount} <span className="text-[10px] font-sans font-normal text-slate-400">جانور</span></span>
+                              </div>
+
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-500 font-bold">بک شدہ حصے:</span>
+                                <span className="font-black text-slate-800 font-mono text-xs" dir="ltr">{cTotal.count} / {dynamicTotalShares} <span className="text-[10px] font-sans font-normal text-slate-400" dir="rtl">حصہ دار</span></span>
+                              </div>
+                              
+                              <div className="flex items-center gap-3 font-sans">
+                                <div className="flex-1 bg-slate-250 h-2 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full ${supervisor.color || 'bg-emerald-600'} rounded-full transition-all duration-500`}
+                                    style={{ width: `${Math.min(100, percentage)}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-[11px] font-mono font-black text-slate-700 shrink-0">{percentage}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Grand consolidated bottom row */}
+                    <div className="bg-slate-900 text-white rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm border border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-base font-sans">∑</div>
+                        <div>
+                          <strong className="text-slate-200 font-extrabold text-sm block">کُل ملا کر مجموعی گرانڈ رپورٹ:</strong>
+                          <span className="text-[10px] text-slate-400 font-bold block">تمام ذیلی کاؤنٹرز و شاخوں کا یکجا میزان</span>
+                        </div>
                       </div>
-                      <div className="text-left">
-                        <span className="text-[10px] font-bold text-slate-400 block">وصول شدہ رقم (وقف)</span>
-                        <strong className="text-emerald-600 font-black text-sm font-mono">{qurbaniStats.waqfPaidAmount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold font-sans">روپے</span></strong>
+                      
+                      <div className="flex items-center gap-8 font-sans">
+                        <div className="text-center sm:text-right">
+                          <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک حصے:</span>
+                          <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalCount} <span className="text-xs font-normal font-sans text-slate-300">حصے</span></strong>
+                        </div>
+                        <div className="w-px h-8 bg-slate-800"></div>
+                        <div className="text-center sm:text-right">
+                          <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک جانور:</span>
+                          <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalAnimals} <span className="text-xs font-normal font-sans text-slate-300">جانور</span></strong>
+                        </div>
+                        <div className="w-px h-8 bg-slate-800"></div>
+                        <div className="text-center sm:text-left">
+                          <span className="text-[10px] text-slate-400 font-bold block mb-0.5 font-sans">وصول شدہ کل فنڈز:</span>
+                          <strong className="text-emerald-400 font-black text-lg font-mono leading-none">{grandTotalAmount.toLocaleString('ur-PK')} <span className="text-xs font-normal font-sans">روپے</span></strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Qurbani Share Type Breakdowns */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-black text-slate-500 block uppercase">عام حصے (بنیادی / انفرادی)</span>
+                          <span className="text-lg font-black text-slate-800 font-mono" dir="ltr">
+                            {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal} <span className="text-xs font-bold text-slate-400 font-sans" dir="rtl">حصے بک</span>
+                          </span>
+                        </div>
+                        <div className="text-left">
+                          <span className="text-[10px] font-bold text-slate-400 block">وصول شدہ رقم</span>
+                          <strong className="text-emerald-600 font-black text-sm font-mono">{qurbaniStats.standardPaidAmount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold font-sans">روپے</span></strong>
+                        </div>
+                      </div>
+
+                      <div className="bg-gradient-to-br from-slate-50 to-blue-50/20 border border-blue-200/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-black text-blue-800 block uppercase">وقف قربانی حصے</span>
+                          <span className="text-lg font-black text-blue-900 font-mono" dir="ltr">
+                            {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal} <span className="text-xs font-bold text-blue-400 font-sans" dir="rtl">وقف بک</span>
+                          </span>
+                        </div>
+                        <div className="text-left">
+                          <span className="text-[10px] font-bold text-slate-400 block">وصول شدہ رقم (وقف)</span>
+                          <strong className="text-emerald-600 font-black text-sm font-mono">{qurbaniStats.waqfPaidAmount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold font-sans">روپے</span></strong>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </motion.div>
             )}
 
