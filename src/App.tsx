@@ -539,7 +539,16 @@ export default function App() {
   // Recent Global Activities logs for multi-branch monitoring, specific to active year
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
     const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
-    const saved = localStorage.getItem(`qurbani_activity_logs_v5_${activeYr}`);
+    const activeBranchId = localStorage.getItem('qurbani_active_branch_v6') || 'super_admin';
+    const activeBranchObjForInit = DEFAULT_BRANCHES.find(b => b.id === activeBranchId) || DEFAULT_BRANCHES[0];
+    const centerId = activeBranchObjForInit.centerId;
+
+    let saved = localStorage.getItem(`qurbani_activity_logs_v5_${activeYr}_${centerId}`);
+    if (!saved) {
+      // Fallback/migration from legacy global key
+      saved = localStorage.getItem(`qurbani_activity_logs_v5_${activeYr}`);
+    }
+
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -551,7 +560,7 @@ export default function App() {
       {
         id: '1',
         timestamp: '08:45 AM',
-        branch: 'کورنگی کاؤنٹر',
+        branch: activeBranchObjForInit.label || 'کورنگی کاؤنٹر',
         type: 'add_animal',
         details: `سال ${activeYr} کا لائیو کام کامیابی سے شروع کیا گیا`
       }
@@ -565,16 +574,25 @@ export default function App() {
   // slip state
   const [activeSlip, setActiveSlip] = useState<{ animal: Animal; share: Share; index: number } | null>(null);
 
-  // loading animals with migration fallbacks, specific to active year
+  // loading animals with migration fallbacks, specific to active year and centerId
   const [animals, setAnimals] = useState<Animal[]>(() => {
     const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const activeBranchId = localStorage.getItem('qurbani_active_branch_v6') || 'super_admin';
+    const activeBranchObjForInit = DEFAULT_BRANCHES.find(b => b.id === activeBranchId) || DEFAULT_BRANCHES[0];
+    const centerId = activeBranchObjForInit.centerId;
+
     const savedAmount = localStorage.getItem(`qurbani_global_share_amount_v5_${activeYr}`);
     const initialGlobalAmount = savedAmount ? (parseInt(savedAmount) || 45000) : 45000;
 
     const savedWaqfAmount = localStorage.getItem(`qurbani_global_waqf_share_amount_v5_${activeYr}`);
     const initialGlobalWaqfAmount = savedWaqfAmount ? (parseInt(savedWaqfAmount) || 35000) : 35000;
     
-    const saved = localStorage.getItem(`qurbani_data_v4_${activeYr}`);
+    let saved = localStorage.getItem(`qurbani_data_v4_${activeYr}_${centerId}`);
+    if (!saved) {
+      // Fallback/migration from legacy global key
+      saved = localStorage.getItem(`qurbani_data_v4_${activeYr}`);
+    }
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -619,10 +637,19 @@ export default function App() {
     }));
   });
 
-  // accounts ledger state, specific to active year
+  // accounts ledger state, specific to active year and centerId
   const [deposits, setDeposits] = useState<DepositRecord[]>(() => {
     const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
-    const saved = localStorage.getItem(`qurbani_deposits_v4_${activeYr}`);
+    const activeBranchId = localStorage.getItem('qurbani_active_branch_v6') || 'super_admin';
+    const activeBranchObjForInit = DEFAULT_BRANCHES.find(b => b.id === activeBranchId) || DEFAULT_BRANCHES[0];
+    const centerId = activeBranchObjForInit.centerId;
+
+    let saved = localStorage.getItem(`qurbani_deposits_v4_${activeYr}_${centerId}`);
+    if (!saved) {
+      // Fallback/migration from legacy global key
+      saved = localStorage.getItem(`qurbani_deposits_v4_${activeYr}`);
+    }
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -745,7 +772,11 @@ export default function App() {
     setWageRates(loadedWageRates);
 
     // Load new year animals
-    const savedData = localStorage.getItem(`qurbani_data_v4_${newYear}`);
+    const centerId = activeBranchObj?.centerId || 'markaz_e_ala';
+    let savedData = localStorage.getItem(`qurbani_data_v4_${newYear}_${centerId}`);
+    if (!savedData) {
+      savedData = localStorage.getItem(`qurbani_data_v4_${newYear}`);
+    }
     let loadedAnimals: Animal[] = [];
     if (savedData) {
       try {
@@ -795,7 +826,10 @@ export default function App() {
     }
 
     // Load new year deposits
-    const savedDeps = localStorage.getItem(`qurbani_deposits_v4_${newYear}`);
+    let savedDeps = localStorage.getItem(`qurbani_deposits_v4_${newYear}_${centerId}`);
+    if (!savedDeps) {
+      savedDeps = localStorage.getItem(`qurbani_deposits_v4_${newYear}`);
+    }
     let newDeps: DepositRecord[] = [];
     if (savedDeps) {
       try {
@@ -813,7 +847,10 @@ export default function App() {
     setDeposits(newDeps);
 
     // Load new year activity logs
-    const savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${newYear}`);
+    let savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${newYear}_${centerId}`);
+    if (!savedLogs) {
+      savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${newYear}`);
+    }
     let newLogs: ActivityLog[] = [];
     if (savedLogs) {
       try {
@@ -827,7 +864,7 @@ export default function App() {
         {
           id: '1',
           timestamp: '08:45 AM',
-          branch: 'کورنگی کاؤنٹر',
+          branch: activeBranchObj?.label || 'کورنگی کاؤنٹر',
           type: 'add_animal',
           details: `سال ${newYear} کے لائیو نظام کا آغاز از خود کار طریقے سے ہو گیا`
         }
@@ -853,7 +890,8 @@ export default function App() {
         details
       };
       const updated = [newLog, ...prev].slice(0, 50);
-      localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}`, JSON.stringify(updated));
+      const centerId = bObj?.centerId || 'markaz_e_ala';
+      localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}_${centerId}`, JSON.stringify(updated));
       return updated;
     });
   };
@@ -912,20 +950,133 @@ export default function App() {
     }
   };
 
+  // Dynamically load animals, deposits, and activityLogs if active center or activeYear changes
   useEffect(() => {
-    localStorage.setItem(`qurbani_data_v4_${activeYear}`, JSON.stringify(animals));
-    broadcastSync(animals, deposits, activityLogs);
-  }, [animals, activeYear]);
+    if (!activeBranchObj) return;
+    const centerId = activeBranchObj.centerId;
+    const activeYr = activeYear;
+
+    const savedAmount = localStorage.getItem(`qurbani_global_share_amount_v5_${activeYr}`);
+    const initialGlobalAmount = savedAmount ? (parseInt(savedAmount) || 45000) : 45000;
+
+    const savedWaqfAmount = localStorage.getItem(`qurbani_global_waqf_share_amount_v5_${activeYr}`);
+    const initialGlobalWaqfAmount = savedWaqfAmount ? (parseInt(savedWaqfAmount) || 35000) : 35000;
+
+    // Load animals
+    let loadedAnimals: Animal[] = [];
+    let saved = localStorage.getItem(`qurbani_data_v4_${activeYr}_${centerId}`);
+    if (!saved) {
+      saved = localStorage.getItem(`qurbani_data_v4_${activeYr}`);
+    }
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          loadedAnimals = parsed.map((animal: any) => ({
+            ...animal,
+            shares: Array.isArray(animal.shares) ? animal.shares.map((share: any) => ({
+              id: share.id,
+              name: share.name || '',
+              phone: share.phone || '',
+              address: share.address || '',
+              isDistributed: !!share.isDistributed,
+              distributionTime: share.distributionTime || undefined,
+              isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
+              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : (share.qurbaniType === 'waqf' ? initialGlobalWaqfAmount : initialGlobalAmount),
+              expectedDeliveryTime: share.expectedDeliveryTime || '01:00 PM',
+              paidByBranchId: share.paidByBranchId || undefined,
+              paidByBranchLabel: share.paidByBranchLabel || undefined,
+              qurbaniType: share.qurbaniType || 'standard'
+            })) : []
+          })).sort((a: any, b: any) => a.id - b.id);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    if (loadedAnimals.length === 0) {
+      loadedAnimals = Array.from({ length: 60 }, (_, i) => ({
+        id: i + 1,
+        label: `گائے نمبر ${i + 1}`,
+        shares: Array.from({ length: SHARES_PER_ANIMAL }, (_, j) => ({
+          id: `${i + 1}-${j + 1}`,
+          name: `حصہ دار ${j + 1}`,
+          phone: '',
+          address: '',
+          isDistributed: false,
+          isPaid: false,
+          amountPaid: initialGlobalAmount,
+          expectedDeliveryTime: '01:00 PM'
+        }))
+      }));
+    }
+    setAnimals(loadedAnimals);
+
+    // Load deposits
+    let loadedDeposits: DepositRecord[] = [];
+    let savedDeps = localStorage.getItem(`qurbani_deposits_v4_${activeYr}_${centerId}`);
+    if (!savedDeps) {
+      savedDeps = localStorage.getItem(`qurbani_deposits_v4_${activeYr}`);
+    }
+    if (savedDeps) {
+      try {
+        const parsed = JSON.parse(savedDeps);
+        if (Array.isArray(parsed)) {
+          loadedDeposits = parsed.map((dep: any) => ({
+            ...dep,
+            destination: dep.destination || 'bank'
+          }));
+        }
+      } catch (e) {}
+    }
+    setDeposits(loadedDeposits);
+
+    // Load activity logs
+    let loadedLogs: ActivityLog[] = [];
+    let savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${activeYr}_${centerId}`);
+    if (!savedLogs) {
+      savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${activeYr}`);
+    }
+    if (savedLogs) {
+      try {
+        const parsed = JSON.parse(savedLogs);
+        if (Array.isArray(parsed)) loadedLogs = parsed;
+      } catch (e) {}
+    }
+    if (loadedLogs.length === 0) {
+      loadedLogs = [
+        {
+          id: '1',
+          timestamp: '08:45 AM',
+          branch: activeBranchObj?.label || 'کورنگی کاؤنٹر',
+          type: 'add_animal',
+          details: `سال ${activeYr} کا لائیو کام کامیابی سے شروع کیا گیا`
+        }
+      ];
+    }
+    setActivityLogs(loadedLogs);
+  }, [activeBranchObj?.centerId, activeYear]);
 
   useEffect(() => {
-    localStorage.setItem(`qurbani_deposits_v4_${activeYear}`, JSON.stringify(deposits));
+    if (!activeBranchObj) return;
+    const centerId = activeBranchObj.centerId;
+    localStorage.setItem(`qurbani_data_v4_${activeYear}_${centerId}`, JSON.stringify(animals));
     broadcastSync(animals, deposits, activityLogs);
-  }, [deposits, activeYear]);
+  }, [animals, activeYear, activeBranchObj?.centerId]);
 
   useEffect(() => {
-    localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}`, JSON.stringify(activityLogs));
+    if (!activeBranchObj) return;
+    const centerId = activeBranchObj.centerId;
+    localStorage.setItem(`qurbani_deposits_v4_${activeYear}_${centerId}`, JSON.stringify(deposits));
     broadcastSync(animals, deposits, activityLogs);
-  }, [activityLogs, activeYear]);
+  }, [deposits, activeYear, activeBranchObj?.centerId]);
+
+  useEffect(() => {
+    if (!activeBranchObj) return;
+    const centerId = activeBranchObj.centerId;
+    localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}_${centerId}`, JSON.stringify(activityLogs));
+    broadcastSync(animals, deposits, activityLogs);
+  }, [activityLogs, activeYear, activeBranchObj?.centerId]);
 
   useEffect(() => {
     localStorage.setItem(`qurbani_global_share_amount_v5_${activeYear}`, globalShareAmount.toString());
@@ -956,12 +1107,13 @@ export default function App() {
         return a;
       });
       if (changed) {
-        localStorage.setItem(`qurbani_data_v4_${activeYear}`, JSON.stringify(updated));
+        const centerId = activeBranchObj?.centerId || 'markaz_e_ala';
+        localStorage.setItem(`qurbani_data_v4_${activeYear}_${centerId}`, JSON.stringify(updated));
         return updated;
       }
       return prev;
     });
-  }, [globalShareAmount, globalWaqfShareAmount, activeYear]);
+  }, [globalShareAmount, globalWaqfShareAmount, activeYear, activeBranchObj?.centerId]);
 
   useEffect(() => {
     localStorage.setItem(`qurbani_hides_v1_${activeYear}`, JSON.stringify(hides));
@@ -1000,13 +1152,14 @@ export default function App() {
           changeYear(incomingYear);
           return;
         }
-        if (incomingAnimals && JSON.stringify(incomingAnimals) !== localStorage.getItem(`qurbani_data_v4_${activeYear}`)) {
+        const centerId = activeBranchObj?.centerId || 'markaz_e_ala';
+        if (incomingAnimals && JSON.stringify(incomingAnimals) !== localStorage.getItem(`qurbani_data_v4_${activeYear}_${centerId}`)) {
           setAnimals(incomingAnimals);
         }
-        if (incomingDeposits && JSON.stringify(incomingDeposits) !== localStorage.getItem(`qurbani_deposits_v4_${activeYear}`)) {
+        if (incomingDeposits && JSON.stringify(incomingDeposits) !== localStorage.getItem(`qurbani_deposits_v4_${activeYear}_${centerId}`)) {
           setDeposits(incomingDeposits);
         }
-        if (incomingLogs && JSON.stringify(incomingLogs) !== localStorage.getItem(`qurbani_activity_logs_v5_${activeYear}`)) {
+        if (incomingLogs && JSON.stringify(incomingLogs) !== localStorage.getItem(`qurbani_activity_logs_v5_${activeYear}_${centerId}`)) {
           setActivityLogs(incomingLogs);
         }
         if (incomingBranches && JSON.stringify(incomingBranches) !== localStorage.getItem('qurbani_branches_v6')) {
@@ -1025,7 +1178,7 @@ export default function App() {
     } catch (e) {
       console.warn('Broadcast channel listener failed', e);
     }
-  }, [branches, activeYear, hides, wageRates]);
+  }, [branches, activeYear, hides, wageRates, activeBranchObj?.centerId]);
 
   // Suggested ID is the first missing ID or next max number
   const suggestedNextId = useMemo(() => {
@@ -1963,10 +2116,124 @@ export default function App() {
     alert('رقم کامیابی کے ساتھ متعلقہ جگہ پر منتقل درج کر لی گئی ہے۔');
   };
 
+  // Dynamically aggregate animals across ALL centers if isGlobalDashboard is true,
+  // otherwise just return the local animals array.
+  const allAnimalsCombined = useMemo(() => {
+    if (!isGlobalDashboard) return animals;
+
+    const uniqueCenterIds = Array.from(new Set(branches.map(b => b.centerId)));
+    let combined: Animal[] = [];
+
+    // Load prices
+    const savedAmount = localStorage.getItem(`qurbani_global_share_amount_v5_${activeYear}`);
+    const initialGlobalAmount = savedAmount ? (parseInt(savedAmount) || 45000) : 45000;
+    const savedWaqfAmount = localStorage.getItem(`qurbani_global_waqf_share_amount_v5_${activeYear}`);
+    const initialGlobalWaqfAmount = savedWaqfAmount ? (parseInt(savedWaqfAmount) || 35000) : 35000;
+
+    uniqueCenterIds.forEach(cId => {
+      // If it's the currently loaded active center, use the live state to be fully reactive!
+      if (activeBranchObj && cId === activeBranchObj.centerId) {
+        combined = [...combined, ...animals.map(a => ({ ...a, centerId: cId }))];
+        return;
+      }
+
+      // Otherwise read from localStorage
+      const saved = localStorage.getItem(`qurbani_data_v4_${activeYear}_${cId}`);
+      let centerAnimals: Animal[] = [];
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            centerAnimals = parsed.map((animal: any) => ({
+              ...animal,
+              shares: Array.isArray(animal.shares) ? animal.shares.map((share: any) => ({
+                id: share.id,
+                name: share.name || '',
+                phone: share.phone || '',
+                address: share.address || '',
+                isDistributed: !!share.isDistributed,
+                distributionTime: share.distributionTime || undefined,
+                isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
+                amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : (share.qurbaniType === 'waqf' ? initialGlobalWaqfAmount : initialGlobalAmount),
+                expectedDeliveryTime: share.expectedDeliveryTime || '01:00 PM',
+                paidByBranchId: share.paidByBranchId || undefined,
+                paidByBranchLabel: share.paidByBranchLabel || undefined,
+                qurbaniType: share.qurbaniType || 'standard'
+              })) : []
+            }));
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      if (centerAnimals.length > 0) {
+        combined = [...combined, ...centerAnimals.map(a => ({ ...a, centerId: cId }))];
+      }
+    });
+
+    return combined;
+  }, [animals, isGlobalDashboard, branches, activeYear, activeBranchObj]);
+
+  const allDepositsCombined = useMemo(() => {
+    if (!isGlobalDashboard) return deposits;
+
+    const uniqueCenterIds = Array.from(new Set(branches.map(b => b.centerId)));
+    let combined: DepositRecord[] = [];
+
+    uniqueCenterIds.forEach(cId => {
+      if (activeBranchObj && cId === activeBranchObj.centerId) {
+        combined = [...combined, ...deposits];
+        return;
+      }
+
+      const savedDeps = localStorage.getItem(`qurbani_deposits_v4_${activeYear}_${cId}`);
+      if (savedDeps) {
+        try {
+          const parsed = JSON.parse(savedDeps);
+          if (Array.isArray(parsed)) {
+            const parsedDeps = parsed.map((dep: any) => ({
+              ...dep,
+              destination: dep.destination || 'bank'
+            }));
+            combined = [...combined, ...parsedDeps];
+          }
+        } catch (e) {}
+      }
+    });
+
+    return combined;
+  }, [deposits, isGlobalDashboard, branches, activeYear, activeBranchObj]);
+
+  const allActivityLogsCombined = useMemo(() => {
+    if (!isGlobalDashboard) return activityLogs;
+
+    const uniqueCenterIds = Array.from(new Set(branches.map(b => b.centerId)));
+    let combined: ActivityLog[] = [];
+
+    uniqueCenterIds.forEach(cId => {
+      if (activeBranchObj && cId === activeBranchObj.centerId) {
+        combined = [...combined, ...activityLogs];
+        return;
+      }
+
+      const savedLogs = localStorage.getItem(`qurbani_activity_logs_v5_${activeYear}_${cId}`);
+      if (savedLogs) {
+        try {
+          const parsed = JSON.parse(savedLogs);
+          if (Array.isArray(parsed)) {
+            combined = [...combined, ...parsed];
+          }
+        } catch (e) {}
+      }
+    });
+
+    return combined.sort((a, b) => b.id.localeCompare(a.id));
+  }, [activityLogs, isGlobalDashboard, branches, activeYear, activeBranchObj]);
+
   // General Stats
   const stats = useMemo(() => {
     // Filter animals with at least one paid/booked share in the visible branches
-    const eligibleAnimals = animals.filter(a => {
+    const eligibleAnimals = allAnimalsCombined.filter(a => {
       if (activeBranchObj?.role === 'super_admin') {
         return a.shares.some(s => s.isPaid);
       }
@@ -1982,7 +2249,7 @@ export default function App() {
     let paidCount = 0;
     let totalCashReceived = 0;
     
-    animals.forEach(a => {
+    allAnimalsCombined.forEach(a => {
       a.shares.forEach(s => {
         const isMatched = isGlobalDashboard || (s.paidByBranchId && activeCenterBranches.includes(s.paidByBranchId));
         if (isMatched) {
@@ -1996,7 +2263,7 @@ export default function App() {
     });
 
     // Filter deposits by region if not global
-    const filteredDeposits = deposits.filter(dep => {
+    const filteredDeposits = allDepositsCombined.filter(dep => {
       if (isGlobalDashboard) return true;
       if (dep.collectorBranchId) {
         return activeCenterBranches.includes(dep.collectorBranchId);
@@ -2029,7 +2296,7 @@ export default function App() {
       percentage: totalShares > 0 ? Math.round((distributedCount / totalShares) * 100) : 0,
       paymentPercentage: totalShares > 0 ? Math.round((paidCount / totalShares) * 100) : 0
     };
-  }, [animals, deposits, isGlobalDashboard, activeCenterBranches, branches]);
+  }, [allAnimalsCombined, allDepositsCombined, isGlobalDashboard, activeCenterBranches, branches, activeBranchObj]);
 
   // Dynamic collections per branch
   const branchCollections = useMemo(() => {
@@ -2051,7 +2318,7 @@ export default function App() {
     collections['unknown'] = { amount: 0, count: 0 };
 
     // Group animals shares by branch
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       animal.shares.forEach(share => {
         if (share.isPaid) {
           const bId = share.paidByBranchId || 'unknown';
@@ -2065,13 +2332,13 @@ export default function App() {
     });
 
     return collections;
-  }, [animals, branches]);
+  }, [allAnimalsCombined, branches]);
 
 
 
   const grandTotalAmount = useMemo(() => {
     let total = 0;
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       animal.shares.forEach(share => {
         if (share.isPaid) {
           const isMatched = isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId));
@@ -2082,11 +2349,11 @@ export default function App() {
       });
     });
     return total;
-  }, [animals, isGlobalDashboard, activeCenterBranches]);
+  }, [allAnimalsCombined, isGlobalDashboard, activeCenterBranches]);
 
   const grandTotalCount = useMemo(() => {
     let count = 0;
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       animal.shares.forEach(share => {
         if (share.isPaid) {
           const isMatched = isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId));
@@ -2097,11 +2364,11 @@ export default function App() {
       });
     });
     return count;
-  }, [animals, isGlobalDashboard, activeCenterBranches]);
+  }, [allAnimalsCombined, isGlobalDashboard, activeCenterBranches]);
 
   const grandTotalAnimals = useMemo(() => {
     let count = 0;
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       const hasBooking = animal.shares.some(share => 
         share.isPaid && (isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId)))
       );
@@ -2110,7 +2377,7 @@ export default function App() {
       }
     });
     return count;
-  }, [animals, isGlobalDashboard, activeCenterBranches]);
+  }, [allAnimalsCombined, isGlobalDashboard, activeCenterBranches]);
 
   const qurbaniStats = useMemo(() => {
     let standardPaid = 0;
@@ -2120,7 +2387,7 @@ export default function App() {
     let waqfTotal = 0;
     let waqfPaidAmount = 0;
 
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       const hasCenterBooking = animal.shares.some(share => 
         share.isPaid && (isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId)))
       );
@@ -2157,7 +2424,7 @@ export default function App() {
       waqfTotal,
       waqfPaidAmount
     };
-  }, [animals, isGlobalDashboard, activeCenterBranches]);
+  }, [allAnimalsCombined, isGlobalDashboard, activeCenterBranches]);
 
   const centerTotals = useMemo(() => {
     const totals: { [centerId: string]: { amount: number; count: number } } = {};
@@ -2247,7 +2514,7 @@ export default function App() {
   // Unique addresses list for filtering (only valid non-empty ones)
   const uniqueAddresses = useMemo(() => {
     const addressesSet = new Set<string>();
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       animal.shares.forEach(share => {
         if (share.address && share.address.trim() !== '') {
           addressesSet.add(share.address.trim());
@@ -2255,12 +2522,12 @@ export default function App() {
       });
     });
     return Array.from(addressesSet).sort();
-  }, [animals]);
+  }, [allAnimalsCombined]);
 
   // Selector to filter flat list of bookings for Data Record spreadsheet
   const filteredSharesForRecords = useMemo(() => {
     const list: { animalId: number; animalLabel: string; share: Share; shareIdx: number }[] = [];
-    animals.forEach(animal => {
+    allAnimalsCombined.forEach(animal => {
       animal.shares.forEach((share, idx) => {
         // filter by branch
         if (recordBranchFilter !== 'all') {
@@ -2312,7 +2579,7 @@ export default function App() {
     }
 
     return list;
-  }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort, isGlobalDashboard, activeCenterBranches]);
+  }, [allAnimalsCombined, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort, isGlobalDashboard, activeCenterBranches]);
 
   // Employee / Nazim compensation ledger & payroll sheet
   const hidesPayroll = useMemo(() => {
@@ -2892,7 +3159,7 @@ export default function App() {
                       {filteredCenterSupervisors.map((supervisor) => {
                         const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
                         const centerBranchIds = branches.filter(b => b.centerId === supervisor.centerId).map(b => b.id);
-                        const activeCenterAnimalsCount = animals.filter(a => 
+                        const activeCenterAnimalsCount = allAnimalsCombined.filter(a => 
                           a.shares.some(s => s.isPaid && s.paidByBranchId && centerBranchIds.includes(s.paidByBranchId))
                         ).length;
 
@@ -4883,6 +5150,75 @@ export default function App() {
                     </table>
                   </div>
                 </div>
+
+                {/* Danger Zone: Reset Data */}
+                {(isSuperAdmin || isNazim) && (
+                  <div className="bg-rose-50 border border-rose-200 p-6 rounded-3xl space-y-4">
+                    <div className="flex items-center gap-2 text-rose-900">
+                      <Trash2 className="text-rose-700 animate-pulse" size={22} />
+                      <h4 className="font-extrabold text-sm font-sans">خطرناک زون - آزمائشی ڈیٹا ری سیٹ (صفائی):</h4>
+                    </div>
+                    <p className="text-xs text-rose-700/80 leading-relaxed font-bold">
+                      اگر آپ ٹیسٹنگ (امتحانی بکنگ) مکمل کر چکے ہیں اور اب بالکل نئے سرے سے اصلی کام شروع کرنا چاہتے ہیں، تو نیچے موجود بٹن سے موجودہ سال اور مرکز کا تمام ڈیٹا (بکنگ، ادائیگیاں، اور بینک اکاؤنٹس جمع تفصیلات) یکسر صاف اور بالکل نیا (0 / 0) کر سکتے ہیں۔
+                    </p>
+                    
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerConfirm(
+                            `کیا آپ واقعی موجودہ مرکز (${activeBranchObj.centerLabel}) اور فعال سال (${activeYear}) کا تمام آزمائشی بکنگ ڈیٹا اور اکاؤنٹس لیجر مستقل طور پر حذف کر کے بالکل صاف چٹھی (0/0) کرنا چاہتے ہیں؟ اس عمل کو واپس نہیں لایا جا سکتا!`,
+                            () => {
+                              // Pristine reset of animals for activeYear and centerId
+                              const initialGlobalAmount = globalShareAmount || 45000;
+                              const cleanAnimals = Array.from({ length: animals.length || 60 }, (_, i) => ({
+                                id: i + 1,
+                                label: `گائے نمبر ${i + 1}`,
+                                shares: Array.from({ length: SHARES_PER_ANIMAL }, (_, j) => ({
+                                  id: `${i + 1}-${j + 1}`,
+                                  name: `حصہ دار ${j + 1}`,
+                                  phone: '',
+                                  address: '',
+                                  isDistributed: false,
+                                  isPaid: false,
+                                  amountPaid: initialGlobalAmount,
+                                  expectedDeliveryTime: '01:00 PM'
+                                }))
+                              }));
+                              
+                              setAnimals(cleanAnimals);
+                              setDeposits([]);
+                              
+                              const centerId = activeBranchObj.centerId;
+                              localStorage.setItem(`qurbani_data_v4_${activeYear}_${centerId}`, JSON.stringify(cleanAnimals));
+                              localStorage.setItem(`qurbani_deposits_v4_${activeYear}_${centerId}`, JSON.stringify([]));
+
+                              // Also write clean empty logs
+                              const cleanLogs = [
+                                {
+                                  id: '1',
+                                  timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                                  branch: activeBranchObj?.label || 'ہیڈ کوارٹر',
+                                  type: 'add_animal' as const,
+                                  details: `سسٹم کا تمام ٹیسٹ ڈیٹا کامیابی سے ری سیٹ کر کے نیا سیشن لائیو شروع کر دیا گیا`
+                                }
+                              ];
+                              setActivityLogs(cleanLogs);
+                              localStorage.setItem(`qurbani_activity_logs_v5_${activeYear}_${centerId}`, JSON.stringify(cleanLogs));
+
+                              broadcastSync(cleanAnimals, [], cleanLogs);
+                              triggerAlert('تمام آزمائشی ڈیٹا کامیابی سے صاف ہو چکا ہے اور پورٹلز پر 0 / 0 لاگو کر دیا گیا ہے۔ اب آپ اصلی کام شروع کر سکتے ہیں!', 'صاف ستھرا آغاز');
+                            },
+                            'جی ہاں، تمام ڈیٹا مکمل ری سیٹ کریں'
+                          );
+                        }}
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold px-6 py-3 rounded-2xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                      >
+                        <Trash2 size={16} /> پورے سسٹم کا آزمائشی ڈیٹا ری سیٹ کریں (0 / 0)
+                      </button>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
 
