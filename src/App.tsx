@@ -35,8 +35,10 @@ import {
   Check,
   Move,
   PlusCircle,
-  Building
+  Building,
+  Calculator
 } from 'lucide-react';
+import ExpensesView, { toUrduDigits, getIslamicYear } from './components/ExpensesView';
 
 interface Share {
   id: string; // "animalId-shareIdx"
@@ -218,6 +220,24 @@ export default function App() {
     }
     return [];
   });
+
+  // Expenses state
+  const [centerExpensesList, setCenterExpensesList] = useState<any[]>(() => {
+    const saved = localStorage.getItem(`qurbani_center_expenses_v1`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`qurbani_center_expenses_v1`, JSON.stringify(centerExpensesList));
+  }, [centerExpensesList]);
 
   // Wage parameters (configured only by super_admin)
   const [wageRates, setWageRates] = useState<{
@@ -2324,7 +2344,13 @@ export default function App() {
       const nazimWages = nazimCount * nazimDays * (wageRates.nazimDailyRate ?? 2500);
       const ustadhWages = ustadhCount * ustadhDays * (wageRates.ustadhDailyRate ?? 1800);
       const studentWages = studentCount * studentDays * (wageRates.studentDailyRate ?? 1000);
-      const dailyWages = nazimWages + ustadhWages + studentWages;
+
+      const centerExpensesTotalObj = centerExpensesList.find(e => e.centerId === b.centerId && e.year === activeYear);
+      const otherExpensesTotal = centerExpensesTotalObj 
+        ? centerExpensesTotalObj.items.reduce((acc: number, curr: any) => acc + (Number(curr.total) || 0), 0)
+        : 0;
+
+      const dailyWages = nazimWages + ustadhWages + studentWages + otherExpensesTotal;
 
       const netPayable = hideCommission + dailyWages;
       return {
@@ -2341,10 +2367,11 @@ export default function App() {
         studentWages,
         hideCommission,
         dailyWages,
+        otherExpensesTotal,
         netPayable
       };
     });
-  }, [branches, hides, wageRates, activeYear]);
+  }, [branches, hides, wageRates, activeYear, centerExpensesList]);
 
   // Hides Collections summaries
   const hidesStats = useMemo(() => {
@@ -2621,6 +2648,16 @@ export default function App() {
 
           {isNazim && (
             <button 
+              onClick={() => setView('expenses')}
+              className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'expenses' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
+            >
+              <Calculator size={22} />
+              <span className="hidden lg:block text-sm">اخراجات</span>
+            </button>
+          )}
+
+          {isNazim && (
+            <button 
               onClick={() => setView('settings')}
               className={`w-full p-3 rounded-xl flex items-center gap-3 transition-all ${view === 'settings' ? 'bg-emerald-600 text-white font-bold' : 'text-emerald-300/60 hover:bg-emerald-900/50 hover:text-white'}`}
             >
@@ -2672,6 +2709,12 @@ export default function App() {
                       <span className="flex flex-col text-right leading-tight">
                         <span className="text-base sm:text-lg">چرم قربانی</span>
                         <span className="text-[10px] sm:text-xs font-bold text-slate-500 mt-0.5">(کھال وصولی و ملازمین حساب)</span>
+                      </span>
+                    )
+                    : view === 'expenses' ? (
+                      <span className="flex flex-col text-right leading-tight">
+                        <span className="text-base sm:text-lg">اخراجات مینیو</span>
+                        <span className="text-[10px] sm:text-xs font-bold text-slate-500 mt-0.5">(بجٹ میزان و نگرانِ شاخ رپورٹ)</span>
                       </span>
                     )
                     : selectedAnimal?.label}
@@ -3648,6 +3691,27 @@ export default function App() {
               </motion.div>
             )}
 
+            {/* Consolidated and branch-wise Expenses feeding/printed report views */}
+            {view === 'expenses' && (
+              <motion.div
+                key="expenses"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="max-w-6xl mx-auto space-y-8 pb-32"
+              >
+                <ExpensesView 
+                  activeYear={activeYear}
+                  branches={branches}
+                  animals={animals}
+                  activeBranchObj={activeBranchObj}
+                  isSuperAdmin={isSuperAdmin}
+                  centerExpensesList={centerExpensesList}
+                  setCenterExpensesList={setCenterExpensesList}
+                />
+              </motion.div>
+            )}
+
             {/* Hides Collection & supervisor reward system view */}
             {view === 'hides' && (
               <motion.div
@@ -3851,9 +3915,17 @@ export default function App() {
                           className="text-[10px] px-2 py-1 rounded bg-slate-100 border border-slate-200 font-bold focus:outline-none"
                         >
                           <option value="all">تمام کاؤنٹرز</option>
-                          {branches.map(b => (
-                            <option key={b.id} value={b.id}>{b.label} ({b.centerLabel})</option>
-                          ))}
+                          {branches
+                            .filter(b => {
+                              if (activeBranchObj?.role === 'nazim') {
+                                return b.centerId === activeBranchObj.centerId && b.role === 'qari';
+                              }
+                              return true;
+                            })
+                            .map(b => (
+                              <option key={b.id} value={b.id}>{b.label} ({b.centerLabel})</option>
+                            ))
+                          }
                         </select>
                       </div>
                     </div>
@@ -4233,6 +4305,12 @@ export default function App() {
                                     <div className="text-slate-400 font-sans flex justify-between gap-3 min-w-[155px]">
                                       <span>طالب ({item.studentCount}×{item.studentDays}د):</span>
                                       <span className="font-mono text-slate-300">{(wageRates.studentDailyRate ?? 1000).toLocaleString('ur-PK')} = <strong className="text-slate-100 font-black">{item.studentWages.toLocaleString('ur-PK')}</strong></span>
+                                    </div>
+                                  )}
+                                  {item.otherExpensesTotal > 0 && (
+                                    <div className="text-slate-400 font-sans flex justify-between gap-3 min-w-[155px] border-t border-slate-700/30 pt-1 mt-1">
+                                      <span>دیگر اخراجات:</span>
+                                      <span className="font-mono text-slate-300"><strong className="text-slate-100 font-black">{item.otherExpensesTotal.toLocaleString('ur-PK')}</strong></span>
                                     </div>
                                   )}
                                   <div className="border-t border-slate-700/50 pt-1 text-slate-300 font-black font-sans flex justify-between gap-3 mt-1">
