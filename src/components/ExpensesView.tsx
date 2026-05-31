@@ -364,7 +364,7 @@ export default function ExpensesView({
           direction: rtl !important;
           background: #ffffff !important;
           color: #000000 !important;
-          font-family: "Inter", system-ui, sans-serif !important;
+          font-family: "Alvi Lahori Nastaleeq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
@@ -642,7 +642,7 @@ export default function ExpensesView({
             id="a4-printable-costs"
             dir="rtl"
             className="w-full max-w-[760px] bg-white border-2 border-slate-200 shadow-md rounded-2xl p-6 md:p-12 space-y-6 text-right selection:bg-amber-100 print-border-double"
-            style={{ fontFamily: '"Inter", system-ui, sans-serif' }}
+            style={{ fontFamily: 'var(--font-urdu)' }}
           >
             {/* Headers exactly as photo */}
             <div className="text-center space-y-1 border-b-2 border-black pb-4">

@@ -2,8 +2,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
-  --font-urdu: "Mehr Nastaliq Urdu", "Alvi Lahori Nastaliq", "Jameel Noori Nastaliq", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif;
+  --font-sans: "Alvi Lahori Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-urdu: "Alvi Lahori Nastaliq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif;
 
   --color-primary: var(--color-emerald-600);
   --color-primary-dark: var(--color-emerald-900);
@@ -13,6 +13,8 @@
 
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
+  font-family: var(--font-sans);
+  line-height: 1.8;
 }
 
 .urdu-text {
