@@ -84,6 +84,10 @@ export default function ExpensesView({
     return false;
   });
 
+  // Local notification warning & dialog states to bypass sandboxed iframe restrictions
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+
   // Map center IDs to standard romantic default Nazim/Supervisor names
   const getDefaultSupervisorName = (cId: string): string => {
     const nazimBranch = branches.find(b => b.centerId === cId && b.role === 'nazim');
@@ -325,17 +329,29 @@ export default function ExpensesView({
       return [...filtered, finalRecord];
     });
 
-    alert('اخراجات کا ریکارڈ کامیابی سے محفوظ کر لیا گیا ہے!');
+    // Fire successful local state toast notification instead of blocking alert()
+    setSuccessToast('اخراجات کا ریکارڈ کامیابی سے محفوظ کر لیا گیا ہے!');
+    setTimeout(() => {
+      setSuccessToast(null);
+    }, 4005);
+
     if (isCentralAdmin) {
       setIsEditing(false); // return to read-only drilldown view
     }
   };
 
-  // Reset to default template values
+  // Reset to default template values via state confirm bypasses
+  const triggerResetConfirm = () => {
+    setShowResetConfirm(true);
+  };
+
   const handleResetToDefaults = () => {
-    if (confirm('کیا آپ واقعی اس شاخ کے اخراجات کو ابتدائی مینوئل فارمیٹ پر بحال کرنا چاہتے ہیں؟ موجودہ تبدیلیاں ختم ہو جائیں گی۔')) {
-      setItems(getInitialExpenseRows(bookedAnimals));
-    }
+    setItems(getInitialExpenseRows(bookedAnimals));
+    setShowResetConfirm(false);
+    setSuccessToast('اخراجات کا ریکارڈ ابتدائی فارمیٹ پر کامیابی سے ری سیٹ کر دیا گیا ہے!');
+    setTimeout(() => {
+      setSuccessToast(null);
+    }, 3000);
   };
 
   // Get center-specific totals for the consolidated panel
@@ -349,92 +365,86 @@ export default function ExpensesView({
     return getInitialExpenseRows(defaultAnimals).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   };
 
-  // Perfect A4 Printing Trigger
+  // Perfect A4 Printing Trigger using robust top-level innerHTML replacement technique
   const triggerPrintReceipt = () => {
     const printableArea = document.getElementById('a4-printable-costs');
     if (!printableArea) return;
 
-    const styleContent = `
-      @media print {
-        @page {
-          size: A4 portrait;
-          margin: 15mm;
+    const origBodyDir = document.body.getAttribute('dir');
+    const origBodyClass = document.body.className;
+
+    // Deep clones the DOM to print instantly and correctly
+    const clone = printableArea.cloneNode(true) as HTMLElement;
+    clone.style.display = 'block';
+
+    const styleBlock = `
+      <style>
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 15mm;
+          }
+          body {
+            direction: rtl !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            font-family: "Alvi Lahori Nastaleeq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            padding: 10px !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-only {
+            display: block !important;
+          }
+          .print-border-double {
+            border: 4px double #000000 !important;
+            padding: 24px !important;
+          }
+          tr, td, th {
+            border: 1px solid #000000 !important;
+            padding: 8px !important;
+            text-align: right !important;
+            font-family: "Alvi Lahori Nastaleeq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
+          }
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            margin-top: 16px !important;
+          }
         }
-        body {
-          direction: rtl !important;
-          background: #ffffff !important;
-          color: #000000 !important;
-          font-family: "Alvi Lahori Nastaleeq", "Jameel Noori Nastaliq", "Mehr Nastaliq Urdu", "Noto Nastaliq Urdu", "Noto Sans Arabic", serif !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        .no-print {
-          display: none !important;
-        }
-        .print-only {
-          display: block !important;
-        }
-        .print-border-double {
-          border: 4px double #000000 !important;
-          padding: 24px !important;
-        }
-      }
+      </style>
     `;
 
-    // Create a headless print frame
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
+    const printFrameContent = `
+      <div dir="rtl" class="urdu-text" style="direction: rtl; text-align: right; width: 100%; min-height: 100%; background: white; padding: 12px; font-family: 'Alvi Lahori Nastaleeq', 'Jameel Noori Nastaliq', 'Mehr Nastaliq Urdu', 'Noto Nastaliq Urdu', 'Noto Sans Arabic', serif;">
+        <div class="print-border-double">
+          ${clone.innerHTML}
+        </div>
+        ${styleBlock}
+      </div>
+    `;
 
-    const doc = iframe.contentWindow?.document;
-    if (doc) {
-      doc.open();
-      doc.write(`
-        <html>
-          <head>
-            <title>اخراجات رپورٹ - ${activeYear}</title>
-            <style>
-              ${styleContent}
-              tr, td, th {
-                border: 1px solid #000000 !important;
-                padding: 8px !important;
-                text-align: right !important;
-              }
-              table {
-                width: 100% !important;
-                border-collapse: collapse !important;
-                margin-top: 16px !important;
-              }
-              .center-label-badge {
-                border: 1px solid #000000;
-                padding: 2px 8px;
-                font-size: 11px;
-                font-weight: bold;
-              }
-            </style>
-          </head>
-          <body dir="rtl" style="margin:0; padding:10px;">
-            <div class="print-border-double" style="direction: rtl; text-align: right;">
-              ${printableArea.innerHTML}
-            </div>
-            <script>
-              window.onload = function() {
-                window.print();
-                setTimeout(() => {
-                  window.parent.document.body.removeChild(window.frameElement);
-                }, 500);
-              };
-            </script>
-          </body>
-        </html>
-      `);
-      doc.close();
-    }
+    const originalContent = document.body.innerHTML;
+    document.body.innerHTML = printFrameContent;
+    document.body.setAttribute('dir', 'rtl');
+    document.body.className = "urdu-text bg-white";
+
+    setTimeout(() => {
+      window.print();
+      
+      document.body.innerHTML = originalContent;
+      if (origBodyDir) {
+        document.body.setAttribute('dir', origBodyDir);
+      } else {
+        document.body.removeAttribute('dir');
+      }
+      document.body.className = origBodyClass;
+      
+      window.location.reload();
+    }, 50);
   };
 
   // If central admin and hasn't highlighted a specific center, display the 3-column consolidated ledger board!
@@ -504,7 +514,7 @@ export default function ExpensesView({
                       <td className="py-4 px-6 text-left font-mono font-black text-emerald-600 text-sm group-hover:scale-[1.01] transition-all">
                         <div className="flex items-center justify-end gap-2">
                           <span className="text-[10px] text-slate-400 font-black font-sans group-hover:translate-x-[-4px] transition-transform">تفصیل دیکھیں ←</span>
-                          <span>{toUrduDigits(centerSum.toLocaleString('ur-PK'))} روپے</span>
+                          <span className="font-sans font-extrabold">{centerSum.toLocaleString('en-US')} روپے</span>
                         </div>
                       </td>
                     </tr>
@@ -557,7 +567,7 @@ export default function ExpensesView({
                 <span>ریکارڈ محفوظ کریں</span>
               </button>
               <button
-                onClick={handleResetToDefaults}
+                onClick={triggerResetConfirm}
                 className="px-4 py-2.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-extrabold text-xs transition-all"
               >
                 ری سیٹ کریں
@@ -622,7 +632,7 @@ export default function ExpensesView({
               </div>
 
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/50 text-[10.5px] text-slate-500 leading-relaxed font-semibold">
-                🟢 <strong>قصائی اجرت (فارمولا):</strong> پہلی رو کی اجرت رقم کو بک شدہ جانوروں سے ضرب دیا جاتا ہے۔ مثال کے طور پر اگر اجرت ۷۰۰۰ روپے ہے تو میزان خودکار طریقے پر (<strong>{toUrduDigits(bookedAnimals)} × ۷۰۰۰ = {toUrduDigits((bookedAnimals * 7000).toLocaleString('ur-PK'))}</strong>) بنے گی۔
+                🟢 <strong>قصائی اجرت (فارمولا):</strong> پہلی رو کی اجرت رقم کو بک شدہ جانوروں سے ضرب دیا جاتا ہے۔ مثال کے طور پر اگر اجرت 7000 روپے ہے تو میزان خودکار طریقے پر (<strong>{bookedAnimals} × 7000 = {(bookedAnimals * 7000).toLocaleString('en-US')}</strong>) بنے گی۔
               </div>
 
               <button
@@ -661,15 +671,15 @@ export default function ExpensesView({
             </div>
 
             {/* Expenses Table Form */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto pb-4">
               <table className="w-full text-xs text-right border-collapse" style={{ border: '1px solid #000000' }}>
                 <thead>
                   <tr className="bg-slate-50 text-black leading-normal border-b border-black font-bold">
                     <th className="py-2.5 px-3 border border-black text-center w-14">نمبر شمار</th>
-                    <th className="py-2.5 px-3 border border-black text-right">اخراجات کی تفصیل</th>
+                    <th className="py-2.5 px-3 border border-black text-center min-w-[260px]">اخراجات کی تفصیل</th>
                     <th className="py-2.5 px-3 border border-black text-center w-28">کام کی نوعیت</th>
-                    <th className="py-2.5 px-3 border border-black text-center w-24">اجرت</th>
-                    <th className="py-2.5 px-3 border border-black text-left w-28">میزان</th>
+                    <th className="py-2.5 px-3 border border-black text-center w-28 min-w-[100px]">اجرت</th>
+                    <th className="py-2.5 px-3 border border-black text-center w-32 min-w-[110px]">میزان</th>
                     {isEditing && <th className="py-2.5 px-2 border border-black text-center w-10 no-print">حذف</th>}
                   </tr>
                 </thead>
@@ -679,17 +689,17 @@ export default function ExpensesView({
                       <td className="py-2.5 px-3 border border-black text-center font-mono">
                         {toUrduDigits(item.serialNum)}
                       </td>
-                      <td className="py-2 px-3 border border-black font-sans">
+                      <td className="py-2.5 px-3 border border-black font-sans min-w-[260px] whitespace-normal break-words">
                         {isEditing && idx !== 0 ? (
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) => handleRowChange(item.id, 'description', e.target.value)}
-                            className="bg-transparent font-bold border-none underline outline-none focus:ring-1 focus:ring-amber-300 w-full text-xs font-sans text-right"
-                            placeholder="تفصیل لکھیں..."
-                          />
+                           <textarea
+                             rows={2}
+                             value={item.description}
+                             onChange={(e) => handleRowChange(item.id, 'description', e.target.value)}
+                             className="bg-transparent font-bold border-none underline outline-none focus:ring-1 focus:ring-amber-300 w-full text-xs font-sans text-right resize-none h-auto min-h-[44px] leading-relaxed block overflow-hidden whitespace-normal break-words"
+                             placeholder="تفصیل لکھیں..."
+                           />
                         ) : (
-                          <span>{item.description}</span>
+                          <span className="block whitespace-normal break-words leading-relaxed py-1">{item.description}</span>
                         )}
                       </td>
                       <td className="py-2 px-3 border border-black text-center">
@@ -704,7 +714,7 @@ export default function ExpensesView({
                           <span>{item.natureOfWork}</span>
                         )}
                       </td>
-                      <td className="py-2 px-3 border border-black text-center font-mono">
+                      <td className="py-2 px-3 border border-black text-center font-mono min-w-[100px]">
                         {isEditing ? (
                           <input
                             type="text"
@@ -713,20 +723,20 @@ export default function ExpensesView({
                             className="bg-transparent text-center font-bold font-mono border-none underline outline-none focus:ring-1 focus:ring-amber-300 w-full text-xs"
                           />
                         ) : (
-                          <span>{typeof item.wage === 'number' ? toUrduDigits(item.wage) : item.wage}</span>
+                          <span className="font-sans font-bold">{typeof item.wage === 'number' ? item.wage.toLocaleString('en-US') : item.wage}</span>
                         )}
                       </td>
-                      <td className="py-2 px-3 border border-black text-left font-mono text-xs font-black">
+                      <td className="py-2 px-3 border border-black text-center font-mono text-xs font-black min-w-[110px]">
                         {isEditing && idx !== 0 ? (
                           <input
                             type="number"
                             value={item.total === 0 ? '' : item.total}
                             onChange={(e) => handleRowChange(item.id, 'total', e.target.value)}
-                            className="bg-transparent font-black text-left border-none underline outline-none focus:ring-1 focus:ring-amber-300 w-full text-xs font-mono"
+                            className="bg-transparent font-black text-center border-none underline outline-none focus:ring-1 focus:ring-amber-300 w-full text-xs font-mono"
                             placeholder="میزان درج کریں"
                           />
                         ) : (
-                          <span>{toUrduDigits(item.total.toLocaleString('ur-PK'))}</span>
+                          <span className="font-sans font-extrabold">{item.total.toLocaleString('en-US')}</span>
                         )}
                       </td>
                       {isEditing && (
@@ -751,8 +761,8 @@ export default function ExpensesView({
                     <td className="py-3 px-3 border border-black text-center" colSpan={isEditing ? 4 : 3}>
                       <div className="flex justify-between items-center w-full px-2">
                         <span className="text-[10px] font-normal font-sans text-slate-400">تمام میزانوں کا مجموعہ</span>
-                        <strong className="text-amber-400 font-extrabold font-mono text-base">
-                          {toUrduDigits(grandTotal.toLocaleString('ur-PK'))} روپے
+                        <strong className="text-amber-400 font-extrabold font-sans text-base">
+                          {grandTotal.toLocaleString('en-US')} روپے
                         </strong>
                       </div>
                     </td>
@@ -773,6 +783,52 @@ export default function ExpensesView({
           </div>
         </div>
       </div>
+
+      {/* Dynamic Success Toast / Notification popup */}
+      {successToast && (
+        <div 
+          onClick={() => setSuccessToast(null)}
+          className="fixed bottom-10 right-5 left-5 md:left-auto md:right-10 z-[9999] bg-emerald-900 text-emerald-100 hover:bg-emerald-950 px-6 py-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border-2 border-emerald-500/30 cursor-pointer animate-fade-in font-sans"
+          dir="rtl"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-3 w-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span className="text-xs md:text-sm font-black text-right">{successToast}</span>
+          </div>
+          <button className="text-emerald-400/60 hover:text-white font-extrabold text-[11px] font-sans">بند کریں ×</button>
+        </div>
+      )}
+
+      {/* Dynamic Custom Reset Confirmation Modal overlay */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-100 shadow-2xl space-y-6 text-right animate-scale-up" dir="rtl">
+            <div className="space-y-2">
+              <h4 className="text-rose-600 font-extrabold text-base">بنیادی فارمیٹ پر بحالی کی تصدیق</h4>
+              <p className="text-xs text-slate-500 leading-relaxed font-black">
+                کیا آپ واقعی اس شاخ کے اخراجات کو ابتدائی یعنی بنیادی فارمیٹ پر بحال کرنا چاہتے ہیں؟ موجودہ تمام اندراجات اور تبدیلیاں ختم ہو جائیں گی۔
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={handleResetToDefaults}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-md transition-all"
+              >
+                جی ہاں، بحال کریں
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black rounded-xl border border-slate-200 transition-all"
+              >
+                کینسل کریں
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
