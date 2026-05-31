@@ -51,6 +51,7 @@ interface Share {
   paidByBranchId?: string;
   paidByBranchLabel?: string;
   customReceiptId?: string;
+  qurbaniType?: 'standard' | 'waqf';
 }
 
 interface Animal {
@@ -317,6 +318,17 @@ export default function App() {
     }
     return 45000; // standard default
   });
+
+  // default global Waqf share amount managed by super_admin
+  const [globalWaqfShareAmount, setGlobalWaqfShareAmount] = useState<number>(() => {
+    const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
+    const saved = localStorage.getItem(`qurbani_global_waqf_share_amount_v5_${activeYr}`);
+    if (saved) {
+      const parsed = parseInt(saved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 35000; // standard default for Waqf (lower rate)
+  });
   
   // dynamic branches list
   const [branches, setBranches] = useState<Branch[]>(() => {
@@ -523,6 +535,9 @@ export default function App() {
     const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
     const savedAmount = localStorage.getItem(`qurbani_global_share_amount_v5_${activeYr}`);
     const initialGlobalAmount = savedAmount ? (parseInt(savedAmount) || 45000) : 45000;
+
+    const savedWaqfAmount = localStorage.getItem(`qurbani_global_waqf_share_amount_v5_${activeYr}`);
+    const initialGlobalWaqfAmount = savedWaqfAmount ? (parseInt(savedWaqfAmount) || 35000) : 35000;
     
     const saved = localStorage.getItem(`qurbani_data_v4_${activeYr}`);
     if (saved) {
@@ -539,10 +554,11 @@ export default function App() {
               isDistributed: !!share.isDistributed,
               distributionTime: share.distributionTime || undefined,
               isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
-              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : initialGlobalAmount,
+              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : (share.qurbaniType === 'waqf' ? initialGlobalWaqfAmount : initialGlobalAmount),
               expectedDeliveryTime: share.expectedDeliveryTime || '01:00 PM',
               paidByBranchId: share.paidByBranchId || undefined,
-              paidByBranchLabel: share.paidByBranchLabel || undefined
+              paidByBranchLabel: share.paidByBranchLabel || undefined,
+              qurbaniType: share.qurbaniType || 'standard'
             })) : []
           })).sort((a: any, b: any) => a.id - b.id);
         }
@@ -628,6 +644,15 @@ export default function App() {
     }
     setGlobalShareAmount(newAmount);
 
+    // Load new year global nominal Waqf share amount
+    const savedWaqfAmount = localStorage.getItem(`qurbani_global_waqf_share_amount_v5_${newYear}`);
+    let newWaqfAmount = 35000;
+    if (savedWaqfAmount) {
+      const parsed = parseInt(savedWaqfAmount);
+      if (!isNaN(parsed) && parsed > 0) newWaqfAmount = parsed;
+    }
+    setGlobalWaqfShareAmount(newWaqfAmount);
+
     // Load new year hides
     const savedHides = localStorage.getItem(`qurbani_hides_v1_${newYear}`);
     let loadedHides: HideCollection[] = [];
@@ -701,10 +726,11 @@ export default function App() {
               isDistributed: !!share.isDistributed,
               distributionTime: share.distributionTime || undefined,
               isPaid: typeof share.isPaid === 'boolean' ? share.isPaid : false,
-              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : newAmount,
+              amountPaid: typeof share.amountPaid === 'number' ? share.amountPaid : (share.qurbaniType === 'waqf' ? newWaqfAmount : newAmount),
               expectedDeliveryTime: share.expectedDeliveryTime || '01:00 PM',
               paidByBranchId: share.paidByBranchId || undefined,
-              paidByBranchLabel: share.paidByBranchLabel || undefined
+              paidByBranchLabel: share.paidByBranchLabel || undefined,
+              qurbaniType: share.qurbaniType || 'standard'
             })) : []
           })).sort((a: any, b: any) => a.id - b.id);
         }
@@ -869,6 +895,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(`qurbani_global_share_amount_v5_${activeYear}`, globalShareAmount.toString());
   }, [globalShareAmount, activeYear]);
+
+  useEffect(() => {
+    localStorage.setItem(`qurbani_global_waqf_share_amount_v5_${activeYear}`, globalWaqfShareAmount.toString());
+  }, [globalWaqfShareAmount, activeYear]);
 
   useEffect(() => {
     localStorage.setItem(`qurbani_hides_v1_${activeYear}`, JSON.stringify(hides));
@@ -1369,6 +1399,34 @@ export default function App() {
     }));
   };
 
+  const updateShareType = (animalId: number, shareId: string, qurbaniType: 'standard' | 'waqf') => {
+    const targetAnimal = animals.find(a => a.id === animalId);
+    if (targetAnimal) {
+      const sh = targetAnimal.shares.find(s => s.id === shareId);
+      if (sh && sh.isPaid && !isNazim && sh.paidByBranchId && sh.paidByBranchId !== activeBranch) {
+        return; // secure lock
+      }
+    }
+    setAnimals(prev => prev.map(a => {
+      if (a.id !== animalId) return a;
+      return {
+        ...a,
+        shares: a.shares.map(s => {
+          if (s.id !== shareId) return s;
+          const shouldUpdateAmount = !s.isPaid;
+          const newAmount = shouldUpdateAmount 
+            ? (qurbaniType === 'waqf' ? globalWaqfShareAmount : globalShareAmount) 
+            : s.amountPaid;
+          return {
+            ...s,
+            qurbaniType,
+            amountPaid: newAmount
+          };
+        })
+      };
+    }));
+  };
+
   const updateShareAmount = (animalId: number, shareId: string, amount: number) => {
     const targetAnimal = animals.find(a => a.id === animalId);
     if (targetAnimal) {
@@ -1726,7 +1784,7 @@ export default function App() {
           oldPaid = s.isPaid;
           shareName = s.name;
           const isNowPaid = !s.isPaid;
-          const newAmount = isNowPaid ? globalShareAmount : s.amountPaid;
+          const newAmount = isNowPaid ? (s.qurbaniType === 'waqf' ? globalWaqfShareAmount : globalShareAmount) : s.amountPaid;
           shareAmount = newAmount;
           return { 
             ...s, 
@@ -1937,6 +1995,43 @@ export default function App() {
       });
     });
     return count;
+  }, [animals]);
+
+  const qurbaniStats = useMemo(() => {
+    let standardPaid = 0;
+    let standardTotal = 0;
+    let standardPaidAmount = 0;
+    let waqfPaid = 0;
+    let waqfTotal = 0;
+    let waqfPaidAmount = 0;
+
+    animals.forEach(animal => {
+      animal.shares.forEach(share => {
+        const isWaqf = share.qurbaniType === 'waqf';
+        if (isWaqf) {
+          waqfTotal += 1;
+          if (share.isPaid) {
+            waqfPaid += 1;
+            waqfPaidAmount += share.amountPaid;
+          }
+        } else {
+          standardTotal += 1;
+          if (share.isPaid) {
+            standardPaid += 1;
+            standardPaidAmount += share.amountPaid;
+          }
+        }
+      });
+    });
+
+    return {
+      standardPaid,
+      standardTotal,
+      standardPaidAmount,
+      waqfPaid,
+      waqfTotal,
+      waqfPaidAmount
+    };
   }, [animals]);
 
   const centerTotals = useMemo(() => {
@@ -2750,6 +2845,35 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Qurbani Share Type Breakdowns */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-black text-slate-500 block uppercase">عام حصے (بنیادی / انفرادی)</span>
+                        <span className="text-lg font-black text-slate-800 font-mono">
+                          {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal} <span className="text-xs font-bold text-slate-400">حصے بک</span>
+                        </span>
+                      </div>
+                      <div className="text-left">
+                        <span className="text-[10px] font-bold text-slate-400 block">وصول شدہ رقم</span>
+                        <strong className="text-emerald-600 font-black text-sm font-mono">{qurbaniStats.standardPaidAmount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold font-sans">روپے</span></strong>
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-slate-50 to-blue-50/20 border border-blue-200/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-black text-blue-800 block uppercase">وقف قربانی حصے</span>
+                        <span className="text-lg font-black text-blue-900 font-mono">
+                          {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal} <span className="text-xs font-bold text-blue-400">وقف بک</span>
+                        </span>
+                      </div>
+                      <div className="text-left">
+                        <span className="text-[10px] font-bold text-slate-400 block">وصول شدہ رقم (وقف)</span>
+                        <strong className="text-emerald-600 font-black text-sm font-mono">{qurbaniStats.waqfPaidAmount.toLocaleString('ur-PK')} <span className="text-[9px] font-bold font-sans">روپے</span></strong>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -2861,26 +2985,71 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Activity and Sync Log Section */}
-                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
-                    <h4 className="font-extrabold text-slate-800 text-sm border-b border-slate-100 pb-3 flex items-center gap-2">
-                      <History size={16} className="text-slate-400 animate-pulse" />
-                      سرگرمی لاگ (آخری تبدیلیاں)
-                    </h4>
-                    
-                    <div className="overflow-y-auto max-h-[350px] space-y-2.5 pr-1">
-                      {activityLogs.map((log) => (
-                        <div key={log.id} className="text-[10px] leading-relaxed border-b border-slate-200 pb-2.5 last:border-none last:pb-0">
-                          <div className="flex justify-between items-center text-slate-500 font-bold mb-1">
-                            <span className="text-emerald-800 font-extrabold">{log.branch}</span>
-                            <span>{log.timestamp}</span>
+                  {/* Right side widgets column */}
+                  <div className="space-y-6 md:col-span-1">
+                    {/* Qurbani Types Ledger Breakdown */}
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                      <h4 className="font-extrabold text-slate-800 text-sm border-b border-slate-100 pb-3 flex items-center gap-2">
+                        <Activity size={16} className="text-emerald-600 animate-pulse" />
+                        حصہ وار مجموعی میزانیہ (کیٹیگری وار سمری)
+                      </h4>
+                      
+                      <div className="space-y-3">
+                        {/* Standard (عام) */}
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                          <div>
+                            <strong className="text-xs font-bold text-slate-700 block text-right">عام حصے (بنیادی)</strong>
+                            <span className="text-[10px] text-slate-400 font-bold block text-right">کل بک شدہ حصے:</span>
                           </div>
-                          <p className="text-slate-700 font-bold">{log.details}</p>
+                          <div className="text-left">
+                            <span className="text-sm font-black text-slate-800 font-mono block">
+                              {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal}
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-600 font-mono block">
+                              {qurbaniStats.standardPaidAmount.toLocaleString('ur-PK')} روپے
+                            </span>
+                          </div>
                         </div>
-                      ))}
-                      {activityLogs.length === 0 && (
-                        <p className="text-slate-400 text-center text-xs py-8">اب تک کوئی لائیو سرگرمی نہیں ہوئی ہے۔</p>
-                      )}
+
+                        {/* Waqf (وقف) */}
+                        <div className="p-3 bg-blue-50/40 rounded-xl border border-blue-100/30 flex items-center justify-between">
+                          <div>
+                            <strong className="text-xs font-bold text-blue-900 block text-right">وقف قربانی حصے</strong>
+                            <span className="text-[10px] text-slate-400 font-bold block text-right font-sans">کل وقف شدہ حصے:</span>
+                          </div>
+                          <div className="text-left">
+                            <span className="text-sm font-black text-blue-900 font-mono block">
+                              {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal}
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-600 font-mono block">
+                              {qurbaniStats.waqfPaidAmount.toLocaleString('ur-PK')} روپے
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Activity and Sync Log Section */}
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+                      <h4 className="font-extrabold text-slate-800 text-sm border-b border-slate-100 pb-3 flex items-center gap-2">
+                        <History size={16} className="text-slate-405" />
+                        سرگرمی لاگ (آخری تبدیلیاں)
+                      </h4>
+                      
+                      <div className="overflow-y-auto max-h-[250px] space-y-2.5 pr-1">
+                        {activityLogs.map((log) => (
+                          <div key={log.id} className="text-[10px] leading-relaxed border-b border-slate-200 pb-2.5 last:border-none last:pb-0">
+                            <div className="flex justify-between items-center text-slate-500 font-bold mb-1">
+                              <span className="text-emerald-800 font-extrabold">{log.branch}</span>
+                              <span>{log.timestamp}</span>
+                            </div>
+                            <p className="text-slate-700 font-bold">{log.details}</p>
+                          </div>
+                        ))}
+                        {activityLogs.length === 0 && (
+                          <p className="text-slate-400 text-center text-xs py-8 font-bold">اب تک کوئی لائیو سرگرمی نہیں ہوئی ہے۔</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2926,7 +3095,7 @@ export default function App() {
                     <h4 className="font-bold text-slate-700 text-lg">نیا بینک چالان / فنڈ ڈپازٹ بنائیں</h4>
                     
                     {depositAbleAnimals.length === 0 ? (
-                      <div className="p-4 bg-orange-50 border border-orange-100 text-orange-800 rounded-xl text-sm">
+                      <div className="p-4 bg-orange-50 border border-orange-100 text-orange-850 rounded-xl text-sm">
                          کوئی نیا فنڈ والا جانور دستیاب نہیں ہے جس کی رقم اب تک بینک ڈپازٹ نہ کی گئی ہو۔
                       </div>
                     ) : (
@@ -2982,7 +3151,7 @@ export default function App() {
                                 </h5>
                                 <p className="text-[11px] text-slate-400 font-normal mt-0.5">اکاؤنٹس میں باقاعدہ بینک سلپ پر جمع کروانا</p>
                               </div>
-                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${depositDestination === 'bank' ? 'border-blue-650 bg-blue-600' : 'border-slate-300'}`}>
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${depositDestination === 'bank' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
                                 {depositDestination === 'bank' && <span className="w-1.5 h-1.5 bg-white rounded-full"></span>}
                               </div>
                             </button>
@@ -3063,8 +3232,8 @@ export default function App() {
                               </span>
                               <span className={`text-[10px] font-bold px-2.5 py-1 rounded ${
                                 dep.destination === 'counter' 
-                                  ? 'bg-indigo-150 bg-indigo-100 text-indigo-800 border border-indigo-200' 
-                                  : 'bg-blue-150 bg-blue-100 text-blue-800 border border-blue-200'
+                                  ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' 
+                                  : 'bg-blue-100 text-blue-800 border border-blue-200'
                               }`}>
                                 {dep.destination === 'counter' ? 'کاؤنٹر نقد دراز' : 'بینک اکاؤنٹ ٹرانسفر'}
                               </span>
@@ -3192,69 +3361,82 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="divide-y divide-slate-100">
+                  <div className="flex flex-col">
                     {selectedAnimal.shares.map((s, idx) => {
                       const isShareLocked = s.isPaid && !isNazim && s.paidByBranchId && s.paidByBranchId !== activeBranch;
                       return (
-                        <div key={s.id} className="p-4 lg:p-6 flex flex-col space-y-4 hover:bg-slate-50/50 transition-colors">
+                        <div key={s.id} className="p-4 lg:p-6 flex flex-col space-y-4 hover:bg-slate-50/50 transition-colors border-b-4 border-slate-200/80 last:border-b-0">
                           <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
                             
                             {/* Left column: ID & core details, inputs */}
                             <div className="flex items-start gap-3 flex-1">
                               <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400 shrink-0 mt-2">{idx + 1}</span>
                               <div className="flex-1 space-y-3">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-                                  <div className="col-span-1">
-                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">حصہ دار کا نام</label>
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                  <div className="md:col-span-4">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-1">قربانی کی قسم</label>
+                                    <select
+                                      value={s.qurbaniType || 'standard'}
+                                      disabled={isShareLocked}
+                                      onChange={(e) => updateShareType(selectedAnimal.id, s.id, e.target.value as 'standard' | 'waqf')}
+                                      className="w-full bg-slate-50 border border-slate-200 h-10 px-3 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                    >
+                                      <option value="standard">بنیادی حصہ / عام</option>
+                                      <option value="waqf">وقف قربانی</option>
+                                    </select>
+                                  </div>
+
+                                  <div className="md:col-span-4">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-1">حصہ دار کا نام</label>
                                     <input 
                                       type="text" 
                                       value={s.name}
                                       disabled={isShareLocked}
                                       onChange={(e) => updateShareName(selectedAnimal.id, s.id, e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      className="w-full bg-slate-50 border border-slate-200 h-10 px-3 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="نام درج کریں"
                                     />
                                   </div>
 
-                                  <div className="col-span-1">
-                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">واٹس ایپ نمبر (بغیر ڈیش)</label>
+                                  <div className="md:col-span-4">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-1">واٹس ایپ نمبر (بغیر ڈیش)</label>
                                     <input 
                                       type="text" 
                                       value={s.phone || ''}
                                       disabled={isShareLocked}
                                       onChange={(e) => updateSharePhone(selectedAnimal.id, s.id, e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      className="w-full bg-slate-50 border border-slate-200 h-10 px-3 rounded-xl font-bold font-mono text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="مثلاً 03001234567"
                                     />
                                   </div>
 
-                                  <div className="col-span-1">
-                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">پتہ (اختیاری)</label>
+                                  <div className="md:col-span-5">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-1">پتہ (اختیاری)</label>
                                     <input 
                                       type="text" 
                                       value={s.address || ''}
                                       disabled={isShareLocked}
                                       onChange={(e) => updateShareAddress(selectedAnimal.id, s.id, e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      className="w-full bg-slate-50 border border-slate-200 h-10 px-3 rounded-xl font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none text-xs disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="پتہ درج کریں"
                                     />
                                   </div>
 
-                                  <div className="col-span-1">
-                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">رقم (روپے)</label>
+                                  <div className="md:col-span-3">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-1">رقم (روپے)</label>
                                     <input 
                                       type="number" 
                                       value={s.amountPaid}
                                       disabled={isShareLocked || !isNazim}
                                       onChange={(e) => updateShareAmount(selectedAnimal.id, s.id, Number(e.target.value))}
-                                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
+                                      className="w-full bg-slate-50 border border-slate-200 h-10 px-3 rounded-xl font-bold font-mono text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500 outline-none disabled:opacity-70 disabled:bg-slate-100/70 disabled:cursor-not-allowed"
                                       placeholder="رقم درج کریں"
                                     />
                                   </div>
 
-                                  <div className="col-span-1">
-                                    <label className="text-[10px] text-slate-400 font-bold block mb-0.5">وقتِ فراہمیِ گوشت</label>
-                                    <div className="flex bg-slate-50 border border-slate-200 rounded-xl overflow-hidden items-center focus-within:ring-1 focus-within:ring-emerald-500">
+                                  <div className="md:col-span-4">
+                                    <label className="text-[10px] text-slate-400 font-bold block mb-1">وقتِ فراہمیِ گوشت</label>
+                                    <div className="flex bg-slate-50 border border-slate-200 rounded-xl overflow-hidden items-center h-10 focus-within:ring-1 focus-within:ring-emerald-500">
                                       <input 
                                         type="text" 
                                         value={(() => {
@@ -3269,7 +3451,7 @@ export default function App() {
                                           const period = parts[1] || 'PM';
                                           updateShareDeliveryTime(selectedAnimal.id, s.id, `${inputVal} ${period}`);
                                         }}
-                                        className="w-full bg-transparent p-2 rounded-l-none font-bold text-slate-800 text-xs outline-none disabled:opacity-70 disabled:bg-slate-100/70"
+                                        className="w-full h-full bg-transparent px-3 font-bold text-slate-800 text-xs outline-none disabled:opacity-70 disabled:bg-slate-100/70"
                                         placeholder="مثلاً 01:00"
                                       />
                                       <div className="flex border-r border-slate-200 h-full shrink-0">
@@ -3281,7 +3463,7 @@ export default function App() {
                                             const time = parts[0] || '01:00';
                                             updateShareDeliveryTime(selectedAnimal.id, s.id, `${time} AM`);
                                           }}
-                                          className={`px-1.5 py-2 text-[8px] font-black transition-colors ${s.expectedDeliveryTime && s.expectedDeliveryTime.endsWith('AM') ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                          className={`px-2 h-full text-[9px] font-black transition-colors ${s.expectedDeliveryTime && s.expectedDeliveryTime.endsWith('AM') ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                         >
                                           AM
                                         </button>
@@ -3293,7 +3475,7 @@ export default function App() {
                                             const time = parts[0] || '01:00';
                                             updateShareDeliveryTime(selectedAnimal.id, s.id, `${time} PM`);
                                           }}
-                                          className={`px-1.5 py-2 text-[8px] font-black transition-colors ${s.expectedDeliveryTime && s.expectedDeliveryTime.endsWith('PM') ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                          className={`px-2 h-full text-[9px] font-black transition-colors ${s.expectedDeliveryTime && s.expectedDeliveryTime.endsWith('PM') ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                         >
                                           PM
                                         </button>
@@ -3321,13 +3503,13 @@ export default function App() {
                             </div>
 
                             {/* Right column: Action buttons for payments, receipts, distribution */}
-                            <div className="flex flex-row md:flex-col items-stretch gap-2 shrink-0 md:min-w-[200px] border-t md:border-t-0 border-slate-100 pt-3 md:pt-0">
+                            <div className="flex flex-col gap-2 shrink-0 w-full md:w-[240px] border-t md:border-t-0 border-slate-100 pt-3 md:pt-0 justify-start">
                               
                               {/* Toggle Payment */}
                               <button
                                 onClick={() => togglePayment(selectedAnimal.id, s.id)}
                                 disabled={isShareLocked}
-                                className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all flex-1 md:flex-initial shadow-sm ${
+                                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all shadow-sm ${
                                   isShareLocked
                                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
                                     : s.isPaid 
@@ -3351,34 +3533,45 @@ export default function App() {
                               {/* View printable Receipt slip */}
                               <button
                                 onClick={() => setActiveSlip({ animal: selectedAnimal, share: s, index: idx + 1 })}
-                                className="bg-slate-100 border border-slate-200 text-slate-800 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-slate-200 transition-all active:scale-95 flex-1 md:flex-initial shadow-sm"
+                                className="w-full bg-slate-100 border border-slate-200 text-slate-800 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-slate-200 transition-all active:scale-95 shadow-sm"
                               >
                                 <Receipt size={14} className="text-slate-500" />
                                 رسید جاری کریں 
                               </button>
 
-                              {/* Transfer / Replace Share */}
-                              {s.name && (
-                                <button
-                                  onClick={() => setTransferSource({ animalId: selectedAnimal.id, shareId: s.id, shareName: s.name, shareIndex: idx })}
-                                  className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-indigo-100 hover:text-indigo-800 transition-all active:scale-95 flex-1 md:flex-initial shadow-sm"
-                                >
-                                  <Move size={14} className="text-indigo-500 shrink-0" />
-                                  حصہ ری پلیس/منتقل کریں
-                                </button>
-                              )}
+                              {/* Row for Transfer & Distribution with reduced width */}
+                              <div className="grid grid-cols-2 gap-2 w-full">
+                                {s.name ? (
+                                  <button
+                                    onClick={() => setTransferSource({ animalId: selectedAnimal.id, shareId: s.id, shareName: s.name, shareIndex: idx })}
+                                    className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-indigo-100 hover:text-indigo-800 transition-all active:scale-95 shadow-sm overflow-hidden whitespace-nowrap text-ellipsis"
+                                    title="حصہ منتقل کریں"
+                                  >
+                                    <Move size={12} className="text-indigo-500 shrink-0" />
+                                    منتقل کریں
+                                  </button>
+                                ) : (
+                                  <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl text-[10px] text-slate-400 flex items-center justify-center font-bold">خالی حصہ</div>
+                                )}
 
-                              {/* Toggle distributed meat status */}
-                              <button 
-                                onClick={() => toggleDistribution(selectedAnimal.id, s.id)}
-                                className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border-2 transition-all flex-1 md:flex-initial shadow-sm ${
-                                  s.isDistributed 
-                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-md hover:bg-emerald-700' 
-                                    : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-250 hover:bg-slate-50'
-                                }`}
-                              >
-                                {s.isDistributed ? 'گوشت مل گیا (سبز)' : 'گوشت ٹوکرا دیا (باقی)'}
-                              </button>
+                                {s.qurbaniType !== 'waqf' ? (
+                                  <button 
+                                    onClick={() => toggleDistribution(selectedAnimal.id, s.id)}
+                                    className={`flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-[10px] font-bold border transition-all shadow-sm overflow-hidden whitespace-nowrap text-ellipsis ${
+                                      s.isDistributed 
+                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-md hover:bg-emerald-700' 
+                                        : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-250 hover:bg-slate-50'
+                                    }`}
+                                    title={s.isDistributed ? 'گوشت مل گیا (سبز)' : 'گوشت ٹوکرا دیا (باقی)'}
+                                  >
+                                    {s.isDistributed ? 'مل گیا (سبز)' : 'ٹوکرا (باقی)'}
+                                  </button>
+                                ) : (
+                                  <div className="bg-sky-50 text-sky-800 text-[10px] font-extrabold py-2 rounded-xl border border-sky-100 flex items-center justify-center text-center leading-tight">
+                                    وقف شدہ
+                                  </div>
+                                )}
+                              </div>
 
                             </div>
                           </div>
@@ -4185,6 +4378,75 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Global default Waqf Share Amount card */}
+                <div className="bg-sky-50 border border-sky-200 p-6 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-2 text-sky-900">
+                    <Coins className="text-sky-700" size={22} />
+                    <h4 className="font-extrabold text-sm font-sans">مرکزی طے شدہ وقف حصہ رقم (وقف قربانی فیس فی حصہ):</h4>
+                  </div>
+                  <p className="text-xs text-sky-700/80 leading-relaxed font-bold">
+                    یہاں سے سپر ایڈمن وقف قربانی (جس کا گوشت حصہ دار کو نہیں دیا جاتا بلکہ مستحقین میں تقسیم ہوتا ہے) کی مستقل رقم متعین کر سکتا ہے۔ نئے شامل ہونے والے وقف حصوں کی قیمت خودکار طور پر یہی رقم لاگو ہوگی۔
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1 sm:col-span-1">
+                      <label className="text-xs text-sky-900/70 font-bold block">متعین رقم برائے وقف حصہ (روپے):</label>
+                      <input 
+                        type="number"
+                        value={globalWaqfShareAmount}
+                        disabled={!isSuperAdmin}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val) && val >= 0) {
+                            setGlobalWaqfShareAmount(val);
+                          }
+                        }}
+                        className="w-full bg-white border border-sky-200/50 p-2.5 rounded-xl font-bold font-mono text-slate-800 text-sm focus:ring-1 focus:ring-sky-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        placeholder="مثال: 35000"
+                      />
+                    </div>
+                    <div className="flex items-end sm:col-span-2 gap-2">
+                      {isSuperAdmin ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Retroactively apply to ALL unpaid shares that are of type 'waqf'
+                            triggerConfirm(
+                              `کیا آپ واقعی تمام موجودہ گایوں کے "غیر ادا شدہ وقف" (unpaid waqf) حصوں کی رقم یکمشت تبدیل کر کے ${globalWaqfShareAmount.toLocaleString('ur-PK')} روپے کرنا چاہتے ہیں؟`,
+                              () => {
+                                setAnimals(prev => {
+                                  const updated = prev.map(a => ({
+                                    ...a,
+                                    shares: a.shares.map(s => {
+                                      if (s.qurbaniType === 'waqf' && !s.isPaid) {
+                                        return { ...s, amountPaid: globalWaqfShareAmount };
+                                      }
+                                      return s;
+                                    })
+                                  }));
+                                  localStorage.setItem('qurbani_data_v4', JSON.stringify(updated));
+                                  broadcastSync(updated, deposits, activityLogs);
+                                  return updated;
+                                });
+                                triggerAlert('کامیابی! تمام غیر ادا شدہ وقف حصوں کی رقم نئی رقم کے مطابق یکمشت تبدیل کر دی گئی ہے۔', 'کامیابی');
+                                logActivity('add_animal', `تمام غیر ادا شدہ وقف حصوں کی رقم یکمشت تبدیل کر کے ${globalWaqfShareAmount.toLocaleString('ur-PK')} روپے مقرر کی گئی`);
+                              },
+                              'وقف رقم یکمشت تبدیل کریں'
+                            );
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-md text-center"
+                        >
+                          وقف حصوں کی رقم یکمشت اپ ڈیٹ کریں ✨
+                        </button>
+                      ) : (
+                        <div className="text-xs text-amber-700 font-bold bg-amber-50 p-2.5 rounded-xl border border-amber-100 flex items-center justify-center w-full">
+                          * صرف سپر ایڈمن ہی طے شدہ وقف فیس کی رقم یکمشت اپ ڈیٹ اور تبدیل کر سکتے ہیں۔
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Branches / Counter Manager Section */}
                 <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-6">
                   <div>
@@ -4954,18 +5216,30 @@ export default function App() {
                       {activeSlip.share.isPaid ? 'مکمل وصول ہو چکی ہے' : 'باقی / غیر ادا شدہ'}
                     </span>
                   </div>
-                  <div className="flex justify-between pt-1">
-                    <span className="text-slate-400 font-bold">گوشت فراہمی کا متوقع وقت:</span>
-                    <strong className="text-emerald-800 font-extrabold flex items-center gap-1">
-                      <Clock size={14} />
-                      {activeSlip.share.expectedDeliveryTime}
-                    </strong>
-                  </div>
+                  {activeSlip.share.qurbaniType === 'waqf' ? (
+                    <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-xs space-y-1">
+                      <div className="flex justify-between items-center text-amber-900 font-extrabold">
+                        <span>قربانی کی نوعیت:</span>
+                        <span>وقف قربانی (صدقہ/خدمتِ خلق)</span>
+                      </div>
+                      <p className="text-[10px] text-amber-700 font-bold">اس قربانی کا گوشت حصہ دار کو فراہم نہیں کیا جاتا، بلکہ مستحقین میں تقسیم ہوتا ہے۔</p>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between pt-1">
+                      <span className="text-slate-400 font-bold">گوشت فراہمی کا متوقع وقت:</span>
+                      <strong className="text-emerald-800 font-extrabold flex items-center gap-1">
+                        <Clock size={14} />
+                        {activeSlip.share.expectedDeliveryTime}
+                      </strong>
+                    </div>
+                  )}
                 </div>
 
                 {/* Footnotes instruction */}
                 <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl text-center text-[10px] leading-relaxed mt-4">
-                  براہ کرم عید والے دن یہ رسید اپنے ہمراہ لائیں اور وقتِ مقررہ پر تشریف لائیں تاکہ گوشت کا ٹوکرا بآسانی وصول کیا جا سکے۔
+                  {activeSlip.share.qurbaniType === 'waqf' 
+                    ? "اطلاع برائے وقف کنندہ: یہ وقف قربانی ہے۔ اس کا گوشت عید مبارک پر وصول کرنے کی ضرورت نہیں ہے، یہ براہِ راست مستحقینِ کراچی میں تقسیم فرما دیا جائے گا۔"
+                    : "براہ کرم عید والے دن یہ رسید اپنے ہمراہ لائیں اور وقتِ مقررہ پر تشریف لائیں تاکہ گوشت کا ٹوکرا بآسانی وصول کیا جا سکے۔"}
                 </div>
 
                 <div className="flex justify-between items-end pt-6 text-[10px] text-slate-400 font-bold font-sans">
