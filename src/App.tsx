@@ -68,6 +68,7 @@ interface DepositRecord {
   reference: string;
   destination: 'bank' | 'counter';
   collectorBranch?: string;
+  collectorBranchId?: string;
 }
 
 interface ActivityLog {
@@ -435,6 +436,22 @@ export default function App() {
     if (!activeBranchObj) return '';
     return `${activeBranchObj.centerLabel} - ${activeBranchObj.label}`;
   }, [activeBranchObj]);
+
+  const isGlobalDashboard = useMemo(() => {
+    if (!activeBranchObj) return true;
+    const cid = activeBranchObj.centerId;
+    return cid === 'markaz_e_ala' || cid === 'jauhar' || cid === 'gulshan';
+  }, [activeBranchObj]);
+
+  const activeCenterBranches = useMemo(() => {
+    if (!activeBranchObj) return [];
+    return branches.filter(b => b.centerId === activeBranchObj.centerId).map(b => b.id);
+  }, [branches, activeBranchObj]);
+
+  const visibleBranches = useMemo(() => {
+    if (isGlobalDashboard) return branches;
+    return branches.filter(b => b.centerId === activeBranchObj?.centerId);
+  }, [branches, isGlobalDashboard, activeBranchObj]);
 
   // Authentication Pin state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -1881,7 +1898,8 @@ export default function App() {
       totalAmount: totalSelectedAmount,
       reference: depositReference || (depositDestination === 'bank' ? 'نقد رقم بینک اکاؤنٹ ٹرانسفر' : 'کاؤنٹر نقد دراز جمع'),
       destination: depositDestination,
-      collectorBranch: branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر'
+      collectorBranch: branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر',
+      collectorBranchId: activeBranch
     };
 
     setDeposits([newDep, ...deposits]);
@@ -1897,33 +1915,59 @@ export default function App() {
 
   // General Stats
   const stats = useMemo(() => {
-    let totalShares = animals.length * SHARES_PER_ANIMAL;
+    // Filter animals with at least one paid/booked share in the visible branches
+    const eligibleAnimals = animals.filter(a => {
+      if (activeBranchObj?.role === 'super_admin') {
+        return a.shares.some(s => s.isPaid);
+      }
+      return a.shares.some(s => {
+        return s.isPaid && s.paidByBranchId && activeCenterBranches.includes(s.paidByBranchId);
+      });
+    });
+
+    const totalAnimals = eligibleAnimals.length;
+    const totalShares = totalAnimals * SHARES_PER_ANIMAL;
+
     let distributedCount = 0;
     let paidCount = 0;
     let totalCashReceived = 0;
     
     animals.forEach(a => {
       a.shares.forEach(s => {
-        if (s.isDistributed) distributedCount++;
-        if (s.isPaid) {
-          paidCount++;
-          totalCashReceived += s.amountPaid;
+        const isMatched = isGlobalDashboard || (s.paidByBranchId && activeCenterBranches.includes(s.paidByBranchId));
+        if (isMatched) {
+          if (s.isDistributed) distributedCount++;
+          if (s.isPaid) {
+            paidCount++;
+            totalCashReceived += s.amountPaid;
+          }
         }
       });
     });
 
-    const bankDepositedAmount = deposits
+    // Filter deposits by region if not global
+    const filteredDeposits = deposits.filter(dep => {
+      if (isGlobalDashboard) return true;
+      if (dep.collectorBranchId) {
+        return activeCenterBranches.includes(dep.collectorBranchId);
+      }
+      // fallback to matching branch label
+      const bId = branches.find(b => b.label === dep.collectorBranch)?.id;
+      return bId && activeCenterBranches.includes(bId);
+    });
+
+    const bankDepositedAmount = filteredDeposits
       .filter(dep => dep.destination === 'bank')
       .reduce((sum, dep) => sum + dep.totalAmount, 0);
 
-    const counterDepositedAmount = deposits
+    const counterDepositedAmount = filteredDeposits
       .filter(dep => dep.destination === 'counter')
       .reduce((sum, dep) => sum + dep.totalAmount, 0);
 
     const cashOnHand = totalCashReceived - bankDepositedAmount - counterDepositedAmount;
 
     return {
-      totalAnimals: animals.length,
+      totalAnimals,
       totalShares,
       distributed: distributedCount,
       paid: paidCount,
@@ -1935,7 +1979,7 @@ export default function App() {
       percentage: totalShares > 0 ? Math.round((distributedCount / totalShares) * 100) : 0,
       paymentPercentage: totalShares > 0 ? Math.round((paidCount / totalShares) * 100) : 0
     };
-  }, [animals, deposits]);
+  }, [animals, deposits, isGlobalDashboard, activeCenterBranches, branches]);
 
   // Dynamic collections per branch
   const branchCollections = useMemo(() => {
@@ -1973,29 +2017,50 @@ export default function App() {
     return collections;
   }, [animals, branches]);
 
+
+
   const grandTotalAmount = useMemo(() => {
     let total = 0;
     animals.forEach(animal => {
       animal.shares.forEach(share => {
         if (share.isPaid) {
-          total += share.amountPaid;
+          const isMatched = isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId));
+          if (isMatched) {
+            total += share.amountPaid;
+          }
         }
       });
     });
     return total;
-  }, [animals]);
+  }, [animals, isGlobalDashboard, activeCenterBranches]);
 
   const grandTotalCount = useMemo(() => {
     let count = 0;
     animals.forEach(animal => {
       animal.shares.forEach(share => {
         if (share.isPaid) {
-          count += 1;
+          const isMatched = isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId));
+          if (isMatched) {
+            count += 1;
+          }
         }
       });
     });
     return count;
-  }, [animals]);
+  }, [animals, isGlobalDashboard, activeCenterBranches]);
+
+  const grandTotalAnimals = useMemo(() => {
+    let count = 0;
+    animals.forEach(animal => {
+      const hasBooking = animal.shares.some(share => 
+        share.isPaid && (isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId)))
+      );
+      if (hasBooking) {
+        count += 1;
+      }
+    });
+    return count;
+  }, [animals, isGlobalDashboard, activeCenterBranches]);
 
   const qurbaniStats = useMemo(() => {
     let standardPaid = 0;
@@ -2006,17 +2071,27 @@ export default function App() {
     let waqfPaidAmount = 0;
 
     animals.forEach(animal => {
+      const hasCenterBooking = animal.shares.some(share => 
+        share.isPaid && (isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId)))
+      );
+
       animal.shares.forEach(share => {
         const isWaqf = share.qurbaniType === 'waqf';
+        const isMatched = isGlobalDashboard || (share.paidByBranchId && activeCenterBranches.includes(share.paidByBranchId));
+        
         if (isWaqf) {
-          waqfTotal += 1;
-          if (share.isPaid) {
+          if (hasCenterBooking) {
+            waqfTotal += 1;
+          }
+          if (share.isPaid && isMatched) {
             waqfPaid += 1;
             waqfPaidAmount += share.amountPaid;
           }
         } else {
-          standardTotal += 1;
-          if (share.isPaid) {
+          if (hasCenterBooking) {
+            standardTotal += 1;
+          }
+          if (share.isPaid && isMatched) {
             standardPaid += 1;
             standardPaidAmount += share.amountPaid;
           }
@@ -2032,7 +2107,7 @@ export default function App() {
       waqfTotal,
       waqfPaidAmount
     };
-  }, [animals]);
+  }, [animals, isGlobalDashboard, activeCenterBranches]);
 
   const centerTotals = useMemo(() => {
     const totals: { [centerId: string]: { amount: number; count: number } } = {};
@@ -2076,6 +2151,11 @@ export default function App() {
 
     return supervisors;
   }, [branches]);
+
+  const filteredCenterSupervisors = useMemo(() => {
+    if (isGlobalDashboard) return centerSupervisors;
+    return centerSupervisors.filter(s => s.centerId === activeBranchObj?.centerId);
+  }, [centerSupervisors, isGlobalDashboard, activeBranchObj]);
 
   const filteredAnimals = animals.filter(a => 
     a.label.includes(searchQuery) || 
@@ -2135,6 +2215,8 @@ export default function App() {
         // filter by branch
         if (recordBranchFilter !== 'all') {
           if (share.paidByBranchId !== recordBranchFilter) return;
+        } else {
+          if (!isGlobalDashboard && (!share.paidByBranchId || !activeCenterBranches.includes(share.paidByBranchId))) return;
         }
         // filter by animal
         if (recordAnimalFilter !== 'all') {
@@ -2180,7 +2262,7 @@ export default function App() {
     }
 
     return list;
-  }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort]);
+  }, [animals, recordBranchFilter, recordAnimalFilter, recordPaymentFilter, recordSearchQuery, recordAddressFilter, recordReceiptSort, isGlobalDashboard, activeCenterBranches]);
 
   // Employee / Nazim compensation ledger & payroll sheet
   const hidesPayroll = useMemo(() => {
@@ -2569,9 +2651,8 @@ export default function App() {
                   <h2 className="text-xl lg:text-2xl font-black text-slate-900 font-sans tracking-tight">اجتماعی قربانی</h2>
                   <h3 className="text-base font-extrabold text-emerald-800 font-sans">جامعہ اشرف المدارس کراچی</h3>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-[10px] font-bold px-3 py-1 rounded-2xl text-white inline-flex flex-col text-right leading-tight ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
-                      <span className="opacity-95">{activeBranchObj?.centerLabel || ''} —</span>
-                      <span className="font-extrabold">{activeBranchObj?.label || ''}</span>
+                    <span className={`text-[11px] font-black px-4 py-1.5 rounded-xl text-white shadow-sm whitespace-nowrap inline-block text-center leading-normal ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
+                      {activeBranchObj?.centerLabel || ''} — {activeBranchObj?.label || ''}
                     </span>
                   </div>
                 </div>
@@ -2590,9 +2671,8 @@ export default function App() {
                       </span>
                     )
                     : selectedAnimal?.label}
-                  <span className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-2xl text-white inline-flex flex-col text-right leading-tight ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
-                    <span className="opacity-90">{activeBranchObj?.centerLabel || ''} —</span>
-                    <span className="font-extrabold">{activeBranchObj?.label || ''}</span>
+                  <span className={`text-[11px] md:text-xs font-black px-4 py-1.5 rounded-xl text-white shadow-sm whitespace-nowrap inline-block text-center leading-normal ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
+                    {activeBranchObj?.centerLabel || ''} — {activeBranchObj?.label || ''}
                   </span>
                 </h2>
               )}
@@ -2606,14 +2686,6 @@ export default function App() {
 
           {/* Active Branch and Log out */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-col items-end gap-0.5">
-              <span className="text-[10px] text-slate-400 font-black block text-right">لاگ ان سیشن بابت:</span>
-              <span className={`text-[11px] font-black px-3 py-1.5 rounded-2xl text-white flex flex-col text-right leading-tight shadow-sm ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-700'}`}>
-                <span className="opacity-90">{activeBranchObj?.centerLabel || ''} —</span>
-                <span className="font-extrabold">{activeBranchObj?.label || ''}</span>
-              </span>
-            </div>
-
             <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-xl px-3 py-1.5 shadow-sm font-bold">
               <Calendar size={14} className="text-indigo-500" />
               <span className="text-[10px] text-indigo-400 block font-bold leading-none">سال:</span>
@@ -2717,7 +2789,7 @@ export default function App() {
                       <ScrollText size={32} />
                     </div>
                     <div>
-                      <h3 className="text-xl font-black text-slate-800 font-sans">قربانی مہم کے لیے مشترکہ انتظام</h3>
+                      <h3 className="text-2xl font-black text-slate-800 font-urdu leading-normal">قربانی مہم کے لیے مشترکہ انتظام</h3>
                       <p className="text-slate-500 max-w-lg mt-1.5 leading-relaxed text-xs font-sans">
                         ہر برانچ (کورنگی، لانڈھی، قیوم آباد، ہیڈ آفس) کے وصول کنندگان اسی سافٹ وئیر پر بیک وقت کام کرسکتے ہیں۔ جوں ہی کوئی وصولی ہوگی، مانیٹر پر لائیو سنک ہوگی!
                       </p>
@@ -2742,9 +2814,9 @@ export default function App() {
                     <div className="relative z-10 space-y-4">
                       <div className="flex items-center gap-2 text-emerald-400">
                         <Info size={18} />
-                        <span className="text-[10px] font-bold uppercase tracking-widest leading-none font-sans">مدد اور طریقہ کار</span>
+                        <span className="text-xs font-bold uppercase tracking-widest leading-relaxed font-urdu">مدد اور طریقہ کار</span>
                       </div>
-                      <h3 className="text-lg font-black font-sans leading-tight">بیک وقت انتظام اور رسیدیں</h3>
+                      <h3 className="text-xl font-black font-urdu leading-normal">بیک وقت انتظام اور رسیدیں</h3>
                       <ul className="text-emerald-100/80 text-xs list-disc pr-4 space-y-2 font-bold select-none leading-relaxed">
                         <li>ہر حصہ دار کا حصہ/رقم بک کریں۔</li>
                         <li>وہیں سے وصولی پر پرنٹ ایبل لائیو رسید حاصل کریں۔</li>
@@ -2770,17 +2842,23 @@ export default function App() {
                       </p>
                     </div>
                     <span className="text-[10px] bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1.5 rounded-xl border border-emerald-100 shrink-0">
-                      کل فعال مراکز: {centerSupervisors.length}
+                      کل فعال مراکز: {filteredCenterSupervisors.length}
                     </span>
                   </div>
 
                   {/* Multi-Column List Format */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {centerSupervisors.map((supervisor) => {
+                    {filteredCenterSupervisors.map((supervisor) => {
                       const cTotal = centerTotals[supervisor.centerId] || { amount: 0, count: 0 };
-                      const totalPossibleShares = animals.length * SHARES_PER_ANIMAL;
-                      const percentage = totalPossibleShares > 0 
-                        ? Math.round((cTotal.count / totalPossibleShares) * 100) 
+                      const centerBranchIds = branches.filter(b => b.centerId === supervisor.centerId).map(b => b.id);
+                      const activeCenterAnimalsCount = animals.filter(a => 
+                        a.shares.some(s => s.isPaid && s.paidByBranchId && centerBranchIds.includes(s.paidByBranchId))
+                      ).length;
+
+                      const dynamicTotalShares = activeCenterAnimalsCount * SHARES_PER_ANIMAL;
+
+                      const percentage = dynamicTotalShares > 0 
+                        ? Math.round((cTotal.count / dynamicTotalShares) * 100) 
                         : 0;
 
                       return (
@@ -2791,9 +2869,9 @@ export default function App() {
                           <div className="flex items-start justify-between">
                             <div className="flex items-center gap-3">
                               <span className={`w-3.5 h-3.5 rounded-xl ${supervisor.color || 'bg-emerald-600'} border-2 border-white shadow-sm shrink-0`}></span>
-                              <div>
-                                <h4 className="font-extrabold text-slate-950 text-sm">{supervisor.centerLabel || 'مرکزی مقام'}</h4>
-                                <span className="text-[11px] text-slate-500 font-bold block">انتظامی ناظم: {supervisor.label}</span>
+                              <div className="space-y-1.5 flex flex-col justify-center">
+                                <h4 className="font-extrabold text-slate-950 text-sm leading-normal">{supervisor.centerLabel || 'مرکزی مقام'}</h4>
+                                <span className="text-[11px] text-slate-500 font-bold block leading-relaxed">انتظامی ناظم: {supervisor.label}</span>
                               </div>
                             </div>
                             <div className="text-right">
@@ -2803,12 +2881,17 @@ export default function App() {
                           </div>
 
                           <div className="space-y-1.5 pt-2 border-t border-slate-150/50">
+                            <div className="flex justify-between items-center text-xs pb-1 border-b border-slate-100/40">
+                              <span className="text-slate-500 font-bold">بک شدہ جانور:</span>
+                              <span className="font-extrabold text-slate-800 font-mono text-xs">{activeCenterAnimalsCount} <span className="text-[10px] font-sans font-normal text-slate-400">جانور</span></span>
+                            </div>
+
                             <div className="flex justify-between items-center text-xs">
                               <span className="text-slate-500 font-bold">بک شدہ حصے:</span>
-                              <span className="font-black text-slate-800 font-mono text-xs">{cTotal.count} / {totalPossibleShares} <span className="text-[10px] font-sans font-normal text-slate-400">حصہ دار</span></span>
+                              <span className="font-black text-slate-800 font-mono text-xs" dir="ltr">{cTotal.count} / {dynamicTotalShares} <span className="text-[10px] font-sans font-normal text-slate-400" dir="rtl">حصہ دار</span></span>
                             </div>
                             
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 font-sans">
                               <div className="flex-1 bg-slate-250 h-2 rounded-full overflow-hidden">
                                 <div 
                                   className={`h-full ${supervisor.color || 'bg-emerald-600'} rounded-full transition-all duration-500`}
@@ -2826,7 +2909,7 @@ export default function App() {
                   {/* Grand consolidated bottom row */}
                   <div className="bg-slate-900 text-white rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm border border-slate-800">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-base">∑</div>
+                      <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-white text-base font-sans">∑</div>
                       <div>
                         <strong className="text-slate-200 font-extrabold text-sm block">کُل ملا کر مجموعی گرانڈ رپورٹ:</strong>
                         <span className="text-[10px] text-slate-400 font-bold block">تمام ذیلی کاؤنٹرز و شاخوں کا یکجا میزان</span>
@@ -2836,7 +2919,12 @@ export default function App() {
                     <div className="flex items-center gap-8 font-sans">
                       <div className="text-center sm:text-right">
                         <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک حصے:</span>
-                        <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalCount} <span className="text-xs font-normal font-sans">افراد</span></strong>
+                        <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalCount} <span className="text-xs font-normal font-sans text-slate-300">حصے</span></strong>
+                      </div>
+                      <div className="w-px h-8 bg-slate-800"></div>
+                      <div className="text-center sm:text-right">
+                        <span className="text-[10px] text-slate-400 font-bold block mb-0.5">کُل بک جانور:</span>
+                        <strong className="text-amber-400 font-black text-base font-mono leading-none">{grandTotalAnimals} <span className="text-xs font-normal font-sans text-slate-300">جانور</span></strong>
                       </div>
                       <div className="w-px h-8 bg-slate-800"></div>
                       <div className="text-center sm:text-left">
@@ -2851,8 +2939,8 @@ export default function App() {
                     <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
                       <div className="space-y-1">
                         <span className="text-[11px] font-black text-slate-500 block uppercase">عام حصے (بنیادی / انفرادی)</span>
-                        <span className="text-lg font-black text-slate-800 font-mono">
-                          {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal} <span className="text-xs font-bold text-slate-400">حصے بک</span>
+                        <span className="text-lg font-black text-slate-800 font-mono" dir="ltr">
+                          {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal} <span className="text-xs font-bold text-slate-400 font-sans" dir="rtl">حصے بک</span>
                         </span>
                       </div>
                       <div className="text-left">
@@ -2864,8 +2952,8 @@ export default function App() {
                     <div className="bg-gradient-to-br from-slate-50 to-blue-50/20 border border-blue-200/60 rounded-2xl p-4 flex items-center justify-between shadow-sm">
                       <div className="space-y-1">
                         <span className="text-[11px] font-black text-blue-800 block uppercase">وقف قربانی حصے</span>
-                        <span className="text-lg font-black text-blue-900 font-mono">
-                          {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal} <span className="text-xs font-bold text-blue-400">وقف بک</span>
+                        <span className="text-lg font-black text-blue-900 font-mono" dir="ltr">
+                          {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal} <span className="text-xs font-bold text-blue-400 font-sans" dir="rtl">وقف بک</span>
                         </span>
                       </div>
                       <div className="text-left">
@@ -2912,7 +3000,7 @@ export default function App() {
                         <Building size={16} className="text-slate-400" />
                         کاؤنٹر وار پیش رفت (انفرادی فہرست)
                       </h4>
-                      <span className="text-[10px] bg-slate-100 text-slate-605 font-bold px-2.5 py-1 rounded-lg">کُل فعال کاؤنٹرز: {branches.length}</span>
+                      <span className="text-[10px] bg-slate-100 text-slate-605 font-bold px-2.5 py-1 rounded-lg">کُل فعال کاؤنٹرز: {visibleBranches.length}</span>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -2926,7 +3014,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
-                          {branches.map((b) => {
+                          {visibleBranches.map((b) => {
                             const bCol = branchCollections[b.id] || { amount: 0, count: 0 };
                             return (
                               <tr key={b.id} className="hover:bg-slate-50 transition-colors">
@@ -2972,8 +3060,8 @@ export default function App() {
                         <tfoot>
                           <tr className="border-t-2 border-slate-950 bg-slate-100/50 font-black">
                             <td colSpan={2} className="py-3 px-3 font-black text-slate-900 text-xs">کُل ملا کر (حسابِ گرانڈ):</td>
-                            <td className="py-3 px-3 text-center font-black font-mono text-slate-800 text-xs">
-                              <span dir="ltr" className="inline-block">{grandTotalCount} / {animals.length * SHARES_PER_ANIMAL}</span>
+                            <td className="py-3 px-3 text-center font-black font-mono text-slate-800 text-xs text-right">
+                              <span dir="ltr" className="inline-block">{grandTotalCount} / {grandTotalAnimals * SHARES_PER_ANIMAL}</span>
                             </td>
                             <td className="py-3 px-3 text-left font-black font-mono text-emerald-950 text-xs sm:text-sm">
                               {grandTotalAmount.toLocaleString('ur-PK')}{' '}
@@ -2986,7 +3074,7 @@ export default function App() {
                   </div>
 
                   {/* Right side widgets column */}
-                  <div className="space-y-6 md:col-span-1">
+                  <div className="space-y-6 md:col-span-1 border-r border-slate-100 pr-0 md:pr-4">
                     {/* Qurbani Types Ledger Breakdown */}
                     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
                       <h4 className="font-extrabold text-slate-800 text-sm border-b border-slate-100 pb-3 flex items-center gap-2">
@@ -3002,7 +3090,7 @@ export default function App() {
                             <span className="text-[10px] text-slate-400 font-bold block text-right">کل بک شدہ حصے:</span>
                           </div>
                           <div className="text-left">
-                            <span className="text-sm font-black text-slate-800 font-mono block">
+                            <span className="text-sm font-black text-slate-800 font-mono block" dir="ltr">
                               {qurbaniStats.standardPaid} / {qurbaniStats.standardTotal}
                             </span>
                             <span className="text-[10px] font-bold text-emerald-600 font-mono block">
@@ -3018,7 +3106,7 @@ export default function App() {
                             <span className="text-[10px] text-slate-400 font-bold block text-right font-sans">کل وقف شدہ حصے:</span>
                           </div>
                           <div className="text-left">
-                            <span className="text-sm font-black text-blue-900 font-mono block">
+                            <span className="text-sm font-black text-blue-900 font-mono block" dir="ltr">
                               {qurbaniStats.waqfPaid} / {qurbaniStats.waqfTotal}
                             </span>
                             <span className="text-[10px] font-bold text-emerald-600 font-mono block">
@@ -4989,7 +5077,7 @@ export default function App() {
                         className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500"
                       >
                         <option value="all">تمام کاؤنٹرز</option>
-                        {branches.map(b => (
+                        {visibleBranches.map(b => (
                           <option key={b.id} value={b.id}>{b.label}</option>
                         ))}
                       </select>
