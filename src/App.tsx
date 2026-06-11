@@ -329,6 +329,16 @@ export default function App() {
 
   const [newYearInput, setNewYearInput] = useState('');
 
+  // central customized organization/institution name
+  const [institutionName, setInstitutionName] = useState<string>(() => {
+    return localStorage.getItem('qurbani_institution_name_v1') || 'جامعہ اشرف المدارس کراچی';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('qurbani_institution_name_v1', institutionName);
+    broadcastSync(animals, deposits, activityLogs, branches, activeYear, hides, wageRates, institutionName);
+  }, [institutionName]);
+
   // default global share amount managed by Nazim, specific to active year
   const [globalShareAmount, setGlobalShareAmount] = useState<number>(() => {
     const activeYr = localStorage.getItem('qurbani_active_year_v2') || '2026';
@@ -674,7 +684,7 @@ export default function App() {
   const [depositReference, setDepositReference] = useState('');
 
   // broadcast synchronization channel
-  const broadcastSync = (updatedAnimals: Animal[], updatedDeposits: DepositRecord[], updatedLogs: ActivityLog[], updatedBranches?: Branch[], updatedYear?: string, updatedHides?: HideCollection[], updatedWageRates?: any) => {
+  const broadcastSync = (updatedAnimals: Animal[], updatedDeposits: DepositRecord[], updatedLogs: ActivityLog[], updatedBranches?: Branch[], updatedYear?: string, updatedHides?: HideCollection[], updatedWageRates?: any, updatedInstitutionName?: string) => {
     try {
       const channel = new BroadcastChannel('qurbani_realtime_sync');
       channel.postMessage({
@@ -684,7 +694,8 @@ export default function App() {
         branches: updatedBranches || branches,
         year: updatedYear || activeYear,
         hides: updatedHides || hides,
-        wageRates: updatedWageRates || wageRates
+        wageRates: updatedWageRates || wageRates,
+        institutionName: updatedInstitutionName || institutionName
       });
       channel.close();
     } catch (e) {
@@ -1147,7 +1158,10 @@ export default function App() {
     try {
       const channel = new BroadcastChannel('qurbani_realtime_sync');
       channel.onmessage = (event) => {
-        const { animals: incomingAnimals, deposits: incomingDeposits, logs: incomingLogs, branches: incomingBranches, year: incomingYear, hides: incomingHides, wageRates: incomingWageRates } = event.data;
+        const { animals: incomingAnimals, deposits: incomingDeposits, logs: incomingLogs, branches: incomingBranches, year: incomingYear, hides: incomingHides, wageRates: incomingWageRates, institutionName: incomingInstitutionName } = event.data;
+        if (incomingInstitutionName && incomingInstitutionName !== institutionName) {
+          setInstitutionName(incomingInstitutionName);
+        }
         if (incomingYear && incomingYear !== activeYear) {
           changeYear(incomingYear);
           return;
@@ -1178,7 +1192,7 @@ export default function App() {
     } catch (e) {
       console.warn('Broadcast channel listener failed', e);
     }
-  }, [branches, activeYear, hides, wageRates, activeBranchObj?.centerId]);
+  }, [branches, activeYear, hides, wageRates, activeBranchObj?.centerId, institutionName]);
 
   // Suggested ID is the first missing ID or next max number
   const suggestedNextId = useMemo(() => {
@@ -1713,7 +1727,7 @@ export default function App() {
 
         const issuingBranchName = activeSlip.share.paidByBranchLabel || branches.find(b => b.id === activeBranch)?.label || 'کاؤنٹر';
         const receiptNumberString = activeSlip.share.customReceiptId || `S-${activeSlip.share.id}`;
-        const msg = `*اجتماعی قربانی جامعہ اشرف المدارس کراچی - رسید بکنگ* 🌸\n\n` +
+        const msg = `*اجتماعی قربانی ${institutionName} - رسید بکنگ* 🌸\n\n` +
                     `*رسید نمبر:* ${receiptNumberString}\n` +
                     `*تفصیل جانور:* ${activeSlip.animal.label}\n` +
                     `*حصہ مہر:* حصہ ${activeSlip.index}\n` +
@@ -2729,7 +2743,7 @@ export default function App() {
           {/* Top visual banner */}
           <div className="bg-emerald-800 p-8 text-center text-white relative">
             <div className="absolute top-3 right-3 bg-emerald-700/50 text-[10px] uppercase font-bold px-2.5 py-1 rounded-full text-emerald-300">
-              جامعہ اشرف المدارس کراچی
+              {institutionName}
             </div>
             <div className="w-16 h-16 bg-white/10 rounded-2xl mx-auto flex items-center justify-center mb-4 backdrop-blur-sm">
               <Lock className="text-white" size={32} />
@@ -2990,7 +3004,7 @@ export default function App() {
                 <div className="flex flex-col gap-0.5">
                   <div className="flex items-center sm:items-baseline gap-2 flex-wrap text-right">
                     <h2 className="text-xl lg:text-2xl font-black text-slate-900 font-sans tracking-tight">اجتماعی قربانی</h2>
-                    <h3 className="text-base lg:text-lg font-extrabold text-emerald-800 font-sans">جامعہ اشرف المدارس کراچی</h3>
+                    <h3 className="text-base lg:text-lg font-extrabold text-emerald-800 font-sans">{institutionName}</h3>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`text-[11px] font-black px-4 py-1.5 rounded-xl text-white shadow-sm whitespace-nowrap inline-block text-center leading-normal ${branches.find(b => b.id === activeBranch)?.color || 'bg-slate-500'}`}>
@@ -4662,6 +4676,41 @@ export default function App() {
                   </button>
                 </div>
 
+                {/* Institution / Organization Name Configuration Card */}
+                <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-2 text-emerald-900">
+                    <Building className="text-emerald-700" size={22} />
+                    <h4 className="font-extrabold text-sm font-sans">بنیادی ادارے / تنظیم کا نام تبدیل کریں:</h4>
+                  </div>
+                  <p className="text-xs text-emerald-700/80 leading-relaxed font-bold">
+                    یہاں آپ جس ادارے، سوسائٹی یا جامعہ کا نام درج کریں گے، وہ پورے سافٹ وئیر میں ڈیش بورڈ، پرنٹ رسیدوں اور تمام اکاؤنٹس پر خودکار طریقے سے لائیو تبدیل ہو جائے گا۔
+                  </p>
+                  
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs text-emerald-900/70 font-bold block">ادارے کا متبادل نام درج کریں:</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={institutionName}
+                          onChange={(e) => setInstitutionName(e.target.value)}
+                          className="flex-1 bg-white border border-emerald-200/50 p-2.5 rounded-xl font-bold text-slate-800 text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                          placeholder="مثال: جامعہ اشرف المدارس کراچی"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerAlert('کامیابی! ادارے کا نام کامیابی سے تبدیل کر دیا گیا ہے اور تمام اکاؤنٹس پر لاگو ہو گیا ہے۔', 'کامیابی');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-5 py-2.5 rounded-xl text-xs flex items-center justify-center transition-all shadow-md shrink-0"
+                        >
+                          محفوظ کریں ✨
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Year Management Card */}
                 <div className="bg-indigo-50 border border-indigo-200 p-6 rounded-3xl space-y-4">
                   <div className="flex items-center gap-2 text-indigo-900">
@@ -5619,7 +5668,7 @@ export default function App() {
                 {/* Print Layout Hidden Divs */}
                 <div id="records-print-container" className="hidden" dir="rtl" style={{ display: 'none' }}>
                   <div className="print-header" style={{ textAlign: 'center', marginBottom: '24px', borderBottom: '3px double #000000', paddingBottom: '12px' }}>
-                    <h1 className="is-urdu print-title" style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 6px 0' }}>اجتماعی قربانی جامعہ اشرف المدارس کراچی</h1>
+                    <h1 className="is-urdu print-title" style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 6px 0' }}>اجتماعی قربانی {institutionName}</h1>
                     <p style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px 0' }}>کھاتہ داران کا تفصیلی ریکارڈ و دستخط کھاتہ (سال {activeYear})</p>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '12px' }}>
                       <span>کُل تعداد گائے حصے: {filteredSharesForRecords.length}</span>
@@ -5673,7 +5722,7 @@ export default function App() {
               <div id="printable-area" dir="rtl" className="border-4 border-double border-emerald-900/30 p-6 rounded-xl space-y-4 text-right bg-white" style={{ direction: 'rtl', textAlign: 'right' }}>
                 <div className="text-center border-b border-slate-200 pb-3">
                   <Beef className="mx-auto text-emerald-600 mb-1" size={32} />
-                  <h3 className="text-xl font-black text-slate-900">اجتماعی قربانی جامعہ اشرف المدارس کراچی</h3>
+                  <h3 className="text-xl font-black text-slate-900">اجتماعی قربانی {institutionName}</h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Qurbani Management Office Receipt</p>
                 </div>
 
@@ -5989,7 +6038,7 @@ export default function App() {
               <div id="printable-hide-area" dir="rtl" className="border-4 border-double border-emerald-950/30 p-6 rounded-xl space-y-4 text-right bg-white" style={{ direction: 'rtl', textAlign: 'right' }}>
                 <div className="text-center border-b border-slate-200 pb-3">
                   <Briefcase className="mx-auto text-emerald-700 mb-1" size={32} />
-                  <h3 className="text-xl font-black text-slate-900 font-sans">چرمِ قربانی جامعہ اشرف المدارس کراچی</h3>
+                  <h3 className="text-xl font-black text-slate-900 font-sans">چرمِ قربانی {institutionName}</h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 font-sans">Sacrificial Hide Collections Receipt</p>
                 </div>
 
